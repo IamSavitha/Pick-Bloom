@@ -1,0 +1,191 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const PB = require('../store.js');
+
+const T1 = new Date('2026-11-19T15:00:00.000Z');
+const T2 = new Date('2026-11-19T16:00:00.000Z');
+const BASE = [
+  { id: 'move', name: 'Move My Body', color: '#000000', light: '#ffffff', activities: [
+    { id: 'run', label: 'Run', emoji: '🏃' }, { id: 'swim', label: 'Swim', emoji: '🏊' },
+  ] },
+  { id: 'calm', name: 'Calm My Body', color: '#000000', light: '#ffffff', activities: [
+    { id: 'rest', label: 'Rest', emoji: '😌' },
+  ] },
+];
+
+function memoryStorage(initial = {}) {
+  const data = { ...initial };
+  return {
+    data,
+    getItem: (k) => (k in data ? data[k] : null),
+    setItem: (k, v) => { data[k] = String(v); },
+    removeItem: (k) => { delete data[k]; },
+  };
+}
+
+const brokenStorage = {
+  getItem() { throw new Error('denied'); },
+  setItem() { throw new Error('denied'); },
+  removeItem() { throw new Error('denied'); },
+};
+
+// --- dates
+test('dateKey formats local dates; addDays and daysBetween work across months', () => {
+  assert.equal(PB.dateKey(new Date(2026, 0, 5)), '2026-01-05');
+  assert.equal(PB.addDays('2026-11-30', 1), '2026-12-01');
+  assert.equal(PB.addDays('2026-03-01', -1), '2026-02-28');
+  assert.equal(PB.daysBetween('2026-11-10', '2026-11-19'), 9);
+});
+
+// --- storage
+test('loadState returns an empty, persistent state when nothing is saved', () => {
+  const r = PB.loadState(memoryStorage());
+  assert.deepEqual(r.state, PB.emptyState());
+  assert.equal(r.persistent, true);
+  assert.equal(r.recovered, false);
+});
+
+test('saveState then loadState round-trips', () => {
+  const storage = memoryStorage();
+  const s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  assert.equal(PB.saveState(storage, s), true);
+  assert.deepEqual(PB.loadState(storage).state, s);
+});
+
+test('loadState marks state non-persistent when storage is missing or throws', () => {
+  assert.equal(PB.loadState(null).persistent, false);
+  assert.equal(PB.loadState(brokenStorage).persistent, false);
+  assert.equal(PB.saveState(brokenStorage, PB.emptyState()), false);
+});
+
+test('corrupt saved data is set aside and the app starts fresh', () => {
+  const storage = memoryStorage({ [PB.STORAGE_KEY]: '{not json' });
+  const r = PB.loadState(storage);
+  assert.equal(r.recovered, true);
+  assert.deepEqual(r.state, PB.emptyState());
+  assert.equal(storage.data[PB.STORAGE_KEY + '.corrupt'], '{not json');
+});
+
+test('valid JSON with the wrong shape is also treated as corrupt', () => {
+  const storage = memoryStorage({ [PB.STORAGE_KEY]: JSON.stringify({ version: 1, entries: 'nope' }) });
+  assert.equal(PB.loadState(storage).recovered, true);
+});
+
+// --- picks
+test('pickActivity records one pick per family per day and can be changed', () => {
+  let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  s = PB.pickActivity(s, '2026-11-19', 'move', 'swim', T2);
+  assert.equal(s.entries.length, 1);
+  assert.deepEqual(s.entries[0], {
+    date: '2026-11-19', familyId: 'move', activityId: 'swim',
+    pickedAt: T2.toISOString(), doneAt: null, feeling: null, updatedAt: T2.toISOString(),
+  });
+});
+
+test('markDone records the feeling; a done pick cannot be changed or cleared', () => {
+  let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  s = PB.markDone(s, '2026-11-19', 'move', 'loved', T2);
+  assert.equal(s.entries[0].doneAt, T2.toISOString());
+  assert.equal(s.entries[0].feeling, 'loved');
+  assert.equal(PB.pickActivity(s, '2026-11-19', 'move', 'swim', T2), s);
+  assert.equal(PB.clearPick(s, '2026-11-19', 'move', T2), s);
+  assert.equal(PB.markDone(s, '2026-11-19', 'move', 'okay', T2), s);
+});
+
+test('markDone rejects unknown feelings and ignores families with no pick', () => {
+  const s = PB.emptyState();
+  assert.throws(() => PB.markDone(s, '2026-11-19', 'move', 'grumpy', T1), /Unknown feeling/);
+  assert.equal(PB.markDone(s, '2026-11-19', 'move', 'okay', T1), s);
+});
+
+test('clearPick keeps a tombstone (activityId null) that entriesForDate ignores', () => {
+  let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  s = PB.clearPick(s, '2026-11-19', 'move', T2);
+  assert.equal(s.entries.length, 1);
+  assert.equal(s.entries[0].activityId, null);
+  assert.equal(s.entries[0].updatedAt, T2.toISOString());
+  assert.deepEqual(PB.entriesForDate(s, '2026-11-19'), {});
+  assert.deepEqual(PB.activeEntries(s), []);
+});
+
+test('entriesForDate maps familyId to that day\'s entry', () => {
+  let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  s = PB.pickActivity(s, '2026-11-18', 'calm', 'rest', T1);
+  assert.deepEqual(Object.keys(PB.entriesForDate(s, '2026-11-19')), ['move']);
+});
+
+// --- settings
+test('setChildName trims and caps length; setReadAloud stores a boolean; both bump updatedAt', () => {
+  let s = PB.setChildName(PB.emptyState(), '   Arjun   ', T1);
+  assert.equal(s.settings.childName, 'Arjun');
+  assert.equal(s.settings.updatedAt, T1.toISOString());
+  assert.equal(PB.setChildName(s, 'x'.repeat(50), T1).settings.childName.length, 30);
+  assert.equal(PB.setReadAloud(s, false, T2).settings.readAloud, false);
+});
+
+test('visibleFamilies hides hidden families and hidden activities; toggling twice restores', () => {
+  let s = PB.toggleFamilyHidden(PB.emptyState(), 'calm', T1);
+  s = PB.toggleActivityHidden(s, 'move', 'swim', T1);
+  const vis = PB.visibleFamilies(BASE, s);
+  assert.deepEqual(vis.map((f) => f.id), ['move']);
+  assert.deepEqual(vis[0].activities.map((a) => a.id), ['run']);
+  s = PB.toggleFamilyHidden(s, 'calm', T2);
+  s = PB.toggleActivityHidden(s, 'move', 'swim', T2);
+  assert.equal(PB.visibleFamilies(BASE, s).length, 2);
+});
+
+test('addCustomActivity adds a uniquely-id\'d button and ignores blank labels', () => {
+  let s = PB.addCustomActivity(PB.emptyState(), BASE, 'move', '  Trampoline ', '', T1);
+  s = PB.addCustomActivity(s, BASE, 'move', 'Trampoline', '🤸', T1);
+  assert.deepEqual(s.settings.customActivities, [
+    { familyId: 'move', id: 'custom-trampoline', label: 'Trampoline', emoji: '⭐' },
+    { familyId: 'move', id: 'custom-trampoline-2', label: 'Trampoline', emoji: '🤸' },
+  ]);
+  assert.equal(PB.addCustomActivity(s, BASE, 'move', '   ', '🤸', T1), s);
+  assert.equal(PB.addCustomActivity(s, BASE, 'nope', 'X', '🤸', T1), s);
+  const move = PB.familiesWithSettings(BASE, s)[0];
+  assert.deepEqual(move.activities.map((a) => [a.id, a.custom, a.hidden]), [
+    ['run', false, false], ['swim', false, false],
+    ['custom-trampoline', true, false], ['custom-trampoline-2', true, false],
+  ]);
+});
+
+test('findActivity falls back gracefully for unknown ids', () => {
+  assert.equal(PB.findActivity(BASE, 'move', 'run').label, 'Run');
+  assert.deepEqual(PB.findActivity(BASE, 'move', 'gone'), { id: 'gone', label: 'gone', emoji: '⭐' });
+});
+
+// --- backup
+test('exportBackup / importBackup round-trip', () => {
+  const s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  const r = PB.importBackup(PB.exportBackup(s, T2));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.state, s);
+});
+
+test('importBackup rejects junk with a friendly error', () => {
+  assert.equal(PB.importBackup('not json').ok, false);
+  assert.match(PB.importBackup('{"app":"pick-and-bloom","state":{}}').error, /not a Pick&Bloom backup/);
+});
+
+// --- merge (sync)
+test('mergeStates keeps entries from both sides and prefers done, then newer', () => {
+  const ipad = PB.markDone(PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1), '2026-11-19', 'move', 'loved', T1);
+  let laptop = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'swim', T2); // newer but not done
+  laptop = PB.pickActivity(laptop, '2026-11-19', 'calm', 'rest', T1);
+  const merged = PB.mergeStates(laptop, ipad);
+  const today = PB.entriesForDate(merged, '2026-11-19');
+  assert.equal(today.move.activityId, 'run');
+  assert.equal(today.calm.activityId, 'rest');
+  assert.deepEqual(PB.mergeStates(ipad, laptop).entries, merged.entries);
+});
+
+test('mergeStates: a newer clear beats an older pick; newer settings win', () => {
+  const picked = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  const cleared = PB.clearPick(picked, '2026-11-19', 'move', T2);
+  assert.deepEqual(PB.entriesForDate(PB.mergeStates(picked, cleared), '2026-11-19'), {});
+  const named = PB.setChildName(PB.emptyState(), 'Arjun', T2);
+  const old = PB.setChildName(PB.emptyState(), 'Old', T1);
+  assert.equal(PB.mergeStates(old, named).settings.childName, 'Arjun');
+  assert.equal(PB.mergeStates(named, old).settings.childName, 'Arjun');
+});
