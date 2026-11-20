@@ -13,7 +13,7 @@
 - Headless Chrome for screenshots.
 
 **Conventions for every task:**
-- Work in `/Users/savithavijayarangan/Desktop/Pick&Bloom` on branch `feat/v1`.
+- Work in the repository root on branch `feat/v1`.
 - Commit messages: conventional style (`feat:`, `test:`, `docs:`). **Do NOT add any Co-Authored-By or Claude attribution lines.**
 - Run tests with `npm test` (that is, `node --test`). Do not `npm install` anything.
 - Never use `innerHTML` with user-entered text (child name, custom labels). Use `textContent`.
@@ -1080,7 +1080,7 @@ There are no unit tests for DOM code. Verify with headless Chrome screenshots (S
   ```
   Repeat for 192 and 180 (`apple-touch-icon.png`). Use a temp HTML file whose `<body style="margin:0">` holds `<img src="file:///…/icon.svg" width=N height=N>`. Delete the temp HTML afterwards; don't commit it.
 
-**Step 6: Verify with screenshots** (save screenshots outside the repo, e.g. `/private/tmp/claude-501/-Users-savithavijayarangan-Desktop-Pick-Bloom/7bd3cc96-c428-4562-ba17-57439e6345ad/scratchpad/`):
+**Step 6: Verify with screenshots** (save screenshots outside the repo, e.g. a scratch folder outside the repo):
 
 ```bash
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
