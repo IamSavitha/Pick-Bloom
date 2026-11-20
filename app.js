@@ -6,10 +6,17 @@
   function el(tag, props, ...children) {
     const node = document.createElement(tag);
     for (const [key, value] of Object.entries(props || {})) {
+      if (key.startsWith('on')) {
+        if (typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
+        continue; // never turn a string into an inline handler
+      }
+      if (key.startsWith('aria-')) {
+        if (value !== null && value !== undefined) node.setAttribute(key, String(value));
+        continue; // aria-pressed=false etc. must still be written
+      }
       if (value === null || value === undefined || value === false) continue;
       if (key === 'class') node.className = value;
       else if (key === 'style') for (const [prop, v] of Object.entries(value)) node.style.setProperty(prop, v);
-      else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
       else if (key === 'hidden' || key === 'disabled') node[key] = true;
       else node.setAttribute(key, value === true ? '' : String(value));
     }
@@ -50,7 +57,7 @@
   function commit(next) {
     if (next === state) return;
     state = next;
-    if (persistent) PB.saveState(storage, state);
+    if (persistent && !PB.saveState(storage, state)) persistent = false; // show the "can't save" banner
     render();
     afterCommit();
   }
@@ -62,16 +69,18 @@
   const childName = () => state.settings.childName;
   const triedKeys = () => new Set(PB.activeEntries(state).map((e) => PB.activityKey(e.familyId, e.activityId)));
   const famStyle = (f) => ({ '--fam': f.color, '--fam-light': f.light });
-  const FACES = { loved: '😄', okay: '🙂', tired: '😴' };
+  const FEELING_TEXT = { loved: { face: '😄', text: 'Loved it' }, okay: { face: '🙂', text: 'It was okay' }, tired: { face: '😴', text: 'Tired' } };
   const FALLBACK_COLORS = { color: '#2a7a46', light: '#e0f4e4' };
+  const cardSelector = (familyId) => `[data-family="${CSS.escape(familyId)}"]`;
 
   function speak(text) {
     if (!state.settings.readAloud || !('speechSynthesis' in window)) return;
     try {
-      window.speechSynthesis.cancel();
+      if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.9;
-      window.speechSynthesis.speak(utterance);
+      utterance.lang = 'en-US';
+      speechSynthesis.speak(utterance);
     } catch (e) { /* speech is a nice-to-have */ }
   }
 
@@ -85,69 +94,87 @@
   // ---------- dialogs ----------
   const pickerDialog = document.getElementById('picker');
   const feelingDialog = document.getElementById('feeling');
+  let lastDialogShow = 0;
+  let lastDialogClose = -Infinity;
+  const tooSoonAfterClose = () => performance.now() - lastDialogClose < 400; // swallow a fast second tap
 
-  function closeOnBackdrop(dialog) {
+  const isOpen = (dialog) => dialog.hasAttribute('open');
+  function closeDialog(dialog) {
+    if (!isOpen(dialog)) return;
+    if (typeof dialog.close === 'function') { dialog.close(); return; } // fires 'close'
+    dialog.removeAttribute('open'); // old browsers without <dialog>
+    lastDialogClose = performance.now();
+  }
+
+  for (const dialog of [pickerDialog, feelingDialog]) {
+    dialog.addEventListener('close', () => { lastDialogClose = performance.now(); });
+    // A fast second tap right after opening must not hit the backdrop or a choice that just appeared under the finger.
+    dialog.addEventListener('click', (event) => {
+      if (performance.now() - lastDialogShow < 300) { event.stopPropagation(); event.preventDefault(); }
+    }, true);
     dialog.addEventListener('click', (event) => {
       if (event.target !== dialog) return;
       const r = dialog.getBoundingClientRect();
       const inside = event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom;
-      if (!inside) dialog.close();
+      if (!inside) closeDialog(dialog);
     });
   }
-  closeOnBackdrop(pickerDialog);
-  closeOnBackdrop(feelingDialog);
 
-  function showDialog(dialog, family, ...content) {
-    dialog.replaceChildren(el('div', { class: 'dialog-inner' }, ...content));
+  function showDialog(dialog, family, title, ...content) {
+    const titleId = dialog.id + '-title';
+    dialog.replaceChildren(el('div', { class: 'dialog-inner' }, el('h2', { class: 'dialog-head', id: titleId }, title), ...content));
+    dialog.setAttribute('aria-labelledby', titleId);
     for (const [prop, v] of Object.entries(famStyle(family))) dialog.style.setProperty(prop, v);
-    if (!dialog.open) dialog.showModal();
+    if (isOpen(dialog)) return;
+    lastDialogShow = performance.now();
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else { dialog.classList.add('dialog-fallback'); dialog.setAttribute('open', ''); }
+  }
+
+  /** After a choice re-rendered the grid, put focus back on that family's card. */
+  function focusCard(familyId) {
+    const target = app.querySelector(cardSelector(familyId) + ' button') || app.querySelector(cardSelector(familyId));
+    if (target) target.focus();
   }
 
   function openPicker(family) {
+    if (tooSoonAfterClose()) return;
     const date = today();
     const entry = PB.entriesForDate(state, date)[family.id] || null;
     const tried = triedKeys();
-    const buttons = family.activities.map((a) => {
-      const isNew = !tried.has(PB.activityKey(family.id, a.id));
-      return el('button', {
-        type: 'button', class: 'activity', 'aria-pressed': entry && entry.activityId === a.id ? 'true' : 'false',
-        onclick: () => {
-          speak(a.label);
-          commit(PB.pickActivity(state, today(), family.id, a.id));
-          pickerDialog.close();
-        },
-      },
-      isNew ? el('span', { class: 'badge-new', 'aria-label': 'new', title: 'Never tried yet' }, '✨') : null,
-      el('span', { class: 'emoji', 'aria-hidden': 'true' }, a.emoji),
-      el('span', { class: 'label' }, a.label));
-    });
-    showDialog(pickerDialog, family,
-      el('h2', { class: 'dialog-head' }, family.name),
+    const choose = (fn) => { commit(fn()); closeDialog(pickerDialog); focusCard(family.id); };
+    const buttons = family.activities.map((a) => el('button', {
+      type: 'button', class: 'activity', 'aria-pressed': !!entry && entry.activityId === a.id,
+      onclick: () => { speak(a.label); choose(() => PB.pickActivity(state, date, family.id, a.id)); },
+    },
+    tried.has(PB.activityKey(family.id, a.id)) ? null : el('span', { class: 'badge-new', role: 'img', 'aria-label': 'new', title: 'Never tried yet' }, '✨'),
+    el('span', { class: 'emoji', 'aria-hidden': 'true' }, a.emoji),
+    el('span', { class: 'label' }, a.label)));
+    showDialog(pickerDialog, family, family.name,
       el('div', { class: 'activity-grid' }, buttons),
       el('div', { class: 'dialog-foot' },
-        entry ? el('button', {
-          type: 'button', class: 'secondary',
-          onclick: () => { commit(PB.clearPick(state, today(), family.id)); pickerDialog.close(); },
-        }, 'Clear my pick') : null,
-        el('button', { type: 'button', class: 'secondary', onclick: () => pickerDialog.close() }, 'Close')));
+        entry ? el('button', { type: 'button', class: 'secondary', onclick: () => choose(() => PB.clearPick(state, date, family.id)) }, 'Clear my pick') : null,
+        el('button', { type: 'button', class: 'secondary', onclick: () => closeDialog(pickerDialog) }, 'Close')));
   }
 
   function openFeeling(family, activity) {
-    const choices = [['loved', '😄', 'Loved it'], ['okay', '🙂', 'It was okay'], ['tired', '😴', 'Tired']];
-    showDialog(feelingDialog, family,
-      el('h2', { class: 'dialog-head' }, `How was ${activity.emoji} ${activity.label}?`),
-      el('div', { class: 'feeling-grid' }, choices.map(([feeling, face, text]) => el('button', {
+    if (tooSoonAfterClose()) return;
+    const date = today(); // the day the child tapped "I did it!", even if midnight passes
+    showDialog(feelingDialog, family, `How was ${activity.emoji} ${activity.label}?`,
+      el('div', { class: 'feeling-grid' }, PB.FEELINGS.map((feeling) => el('button', {
         type: 'button', class: 'feeling',
         onclick: () => {
-          speak(text);
-          commit(PB.markDone(state, today(), family.id, feeling));
-          feelingDialog.close();
-          const card = document.querySelector(`.family-card[data-family="${CSS.escape(family.id)}"]`);
-          if (card) card.classList.add('bloom');
+          speak(FEELING_TEXT[feeling].text);
+          const before = state;
+          commit(PB.markDone(state, date, family.id, feeling));
+          closeDialog(feelingDialog);
+          const card = app.querySelector(cardSelector(family.id));
+          if (state !== before && card) card.classList.add('bloom');
+          focusCard(family.id);
         },
-      }, el('span', { class: 'emoji', 'aria-hidden': 'true' }, face), el('span', { class: 'label' }, text)))),
+      }, el('span', { class: 'emoji', 'aria-hidden': 'true' }, FEELING_TEXT[feeling].face), el('span', { class: 'label' }, FEELING_TEXT[feeling].text)))),
       el('div', { class: 'dialog-foot' },
-        el('button', { type: 'button', class: 'secondary', onclick: () => feelingDialog.close() }, 'Not yet')));
+        el('button', { type: 'button', class: 'secondary', onclick: () => closeDialog(feelingDialog) }, 'Not yet')));
   }
 
   // ---------- Today ----------
@@ -164,14 +191,16 @@
     }
     const activity = PB.findActivity(allFams(), family.id, entry.activityId);
     if (entry.doneAt) {
+      const feeling = FEELING_TEXT[entry.feeling];
       props.class += ' done';
+      props.tabindex = '-1';
       return el('div', props,
         el('div', { class: 'family-main' },
           name,
           el('span', { class: 'card-body' },
             el('span', { class: 'big-emoji', 'aria-hidden': 'true' }, `🌸${activity.emoji}`),
             el('span', { class: 'label' }, activity.label),
-            el('span', { class: 'face', role: 'img', 'aria-label': entry.feeling || 'done' }, FACES[entry.feeling] || '✅'))));
+            el('span', { class: 'face', role: 'img', 'aria-label': feeling ? feeling.text : 'Done' }, feeling ? feeling.face : '✅'))));
     }
     return el('div', props,
       el('button', { type: 'button', class: 'family-main', onclick: () => openPicker(family) },
@@ -245,15 +274,16 @@
       el('p', { class: 'total' }, `🌸 ${total} ${total === 1 ? 'flower' : 'flowers'} grown so far`));
   }
 
-  // ---------- Grown-ups (Task 5 registers the real view) ----------
+  // ---------- Grown-ups (placeholder until Task 5 registers the real view) ----------
   function grownupsView() {
-    if (views.grownups) return views.grownups();
     return el('section', { class: 'view grownups' }, el('p', { class: 'placeholder' }, 'Grown-up corner — coming next.'));
   }
 
   // ---------- render ----------
   const banner = document.getElementById('banner');
   const app = document.getElementById('app');
+  const builders = { today: todayView, garden: gardenView, grownups: grownupsView };
+  let renderedDate = null;
 
   function render() {
     if (!persistent) {
@@ -266,8 +296,8 @@
       banner.hidden = true;
     }
     const view = currentView();
-    const builders = { today: todayView, garden: gardenView, grownups: grownupsView };
-    app.replaceChildren(builders[view]());
+    renderedDate = today();
+    app.replaceChildren((views[view] || builders[view])());
     for (const link of document.querySelectorAll('.tabs a')) {
       if (link.getAttribute('href') === '#' + view) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
@@ -275,15 +305,21 @@
     document.body.dataset.ready = '1';
   }
 
+  /** Midnight passed while the page stayed open: show the new day. */
+  function renderIfNewDay() { if (today() !== renderedDate) render(); }
+
   window.addEventListener('hashchange', () => {
-    if (pickerDialog.open) pickerDialog.close();
-    if (feelingDialog.open) feelingDialog.close();
+    closeDialog(pickerDialog);
+    closeDialog(feelingDialog);
     render();
     window.scrollTo(0, 0);
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') render();
   });
+  window.addEventListener('pageshow', renderIfNewDay);
+  window.addEventListener('focus', renderIfNewDay);
+  setInterval(renderIfNewDay, 60000);
 
   window.PBApp = {
     getState: () => state,
