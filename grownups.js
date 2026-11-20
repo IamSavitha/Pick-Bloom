@@ -4,6 +4,8 @@
 
   const { el, FEELING_TEXT } = window.PBApp;
   const HOLD_MS = 3000;
+  const RELOCK_HIDDEN_MS = 60000;   // away this long (app switched, screen locked) locks the corner again
+  const RELOCK_IDLE_MS = 600000;    // 10 minutes with no tap or key while open locks it too
   const MAX_LOVED = 8;
   const params = new URLSearchParams(location.search);
 
@@ -24,13 +26,17 @@
   let rangeDays = 7;
   let fixOffset = 0;           // 0 = today, 1 = yesterday, ... 6
   let editing = null;          // "familyId/activityId" of the button being edited
+  let editingKid = null;       // id of the child whose name/picture is being edited
   let backupNote = null;       // { kind: 'ok' | 'error', text }
   let nextFocus = null;        // ids to try focusing after the next render
   let holdTimer = null;
   const openDetails = new Set();
   const drafts = {};           // input id -> typed text, so a re-render never loses typing
 
-  const S = () => window.PBApp.getState();
+  const S = () => window.PBApp.getState(); // the child shown now (switch with the chips at the top)
+  const F = () => window.PBApp.getFamily();
+  const kids = () => PB.activeChildren(F());
+  const kidName = (child) => window.PBApp.nameOf(child);
   const today = () => PB.dateKey(new Date());
   const famStyle = (f) => ({ '--fam': f.color, '--fam-light': f.light });
   const announce = (text) => { const live = document.getElementById('announce'); if (live) live.textContent = text; };
@@ -51,25 +57,44 @@
   }
 
   // A text field commits on "change", which fires on blur. If that blur came from tapping another control,
-  // re-rendering at once would swap that control out mid-tap and swallow the tap. So wait until the tap is over.
+  // re-rendering at once would swap that control out mid-tap and swallow the tap. So wait until the tap is over:
+  // right after its click has been handled, or 350ms after the finger lifts (iPad sends click late, or not at all
+  // for a tap on nothing). Never wait more than 1s, and a window blur ends the tap too.
   let pointerHeld = false;
-  let afterPointer = [];
+  let queued = [];
+  let flushTimer = null;
+  let capTimer = null;
+  function flushQueued() {
+    clearTimeout(flushTimer);
+    clearTimeout(capTimer);
+    flushTimer = capTimer = null;
+    const run = queued;
+    queued = [];
+    run.forEach((fn) => fn());
+  }
+  function flushIn(ms) {
+    if (!queued.length) return;
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flushQueued, ms);
+  }
   document.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
-  const releasePointer = () => {
-    pointerHeld = false;
-    const queued = afterPointer;
-    afterPointer = [];
-    if (queued.length) setTimeout(() => queued.forEach((fn) => fn()), 0);
-  };
+  const releasePointer = () => { pointerHeld = false; flushIn(350); };
   document.addEventListener('pointerup', releasePointer, true);
   document.addEventListener('pointercancel', releasePointer, true);
-  const whenTapEnds = (fn) => { if (pointerHeld) afterPointer.push(fn); else setTimeout(fn, 0); };
+  window.addEventListener('blur', releasePointer);
+  document.addEventListener('click', () => flushIn(0), true); // the timeout runs after this click's own handlers
+  function whenTapEnds(fn) {
+    queued.push(fn);
+    if (!capTimer) capTimer = setTimeout(flushQueued, 1000);
+    if (!pointerHeld && !flushTimer) flushIn(0);
+  }
 
   function draftInput(id, fallback, props) {
     return el('input', { type: 'text', id, value: drafts[id] !== undefined ? drafts[id] : fallback,
       oninput: (e) => { drafts[id] = e.target.value; }, ...props });
   }
   const clearDrafts = (...ids) => ids.forEach((id) => { delete drafts[id]; });
+  const clearAllDrafts = () => clearDrafts(...Object.keys(drafts));
 
   // ---------- small shared pieces ----------
   const dot = (f) => el('span', { class: 'gu-dot', style: famStyle(f), 'aria-hidden': 'true' });
@@ -127,6 +152,7 @@
       holdTimer = setTimeout(() => {
         holdTimer = null;
         unlocked = true;
+        lastInput = Date.now();
         announce('Grown-up corner open');
         rerender(['gu-tab-' + tab]);
       }, HOLD_MS);
@@ -160,6 +186,35 @@
         note));
   }
 
+  // ---------- locking again ----------
+  /** Lock without leaving the page (back from the background, or idle): a toddler must not find it open. */
+  function relock() {
+    unlocked = false;
+    cancelHold();
+    editing = null;
+    editingKid = null;
+    backupNote = null;
+    clearAllDrafts();
+    if (location.hash === '#grownups') window.PBApp.render();
+  }
+  // Not on hide itself: Android's file chooser hides the page while a backup is being picked.
+  let hiddenAt = null;
+  let lastInput = Date.now();
+  const markHidden = () => { if (hiddenAt === null) hiddenAt = Date.now(); };
+  const backFromHidden = () => {
+    const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+    hiddenAt = null;
+    if (away > RELOCK_HIDDEN_MS) relock();
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') markHidden();
+    else backFromHidden();
+  });
+  window.addEventListener('pagehide', markHidden);
+  window.addEventListener('pageshow', backFromHidden);
+  for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { lastInput = Date.now(); }, true);
+  setInterval(() => { if (unlocked && Date.now() - lastInput > RELOCK_IDLE_MS) relock(); }, 5000);
+
   // ---------- unlocked shell ----------
   function lock() {
     unlocked = false;
@@ -187,6 +242,28 @@
       }, el('span', { class: 'gu-tab-icon', 'aria-hidden': 'true' }, t.icon), el('span', { class: 'gu-tab-label' }, t.label))));
   }
 
+  /** Which child every sub-tab shows. Only when there are 2+ children. */
+  function childSwitcher() {
+    const list = kids();
+    if (list.length < 2) return null;
+    const activeId = window.PBApp.activeChildId();
+    const pick = (child) => {
+      if (child.id === activeId) return;
+      editing = null;
+      editingKid = null;
+      for (const id of Object.keys(drafts)) delete drafts[id]; // typing belongs to the child it was typed for
+      nextFocus = ['gu-kid-' + child.id];
+      announce(`Showing ${kidName(child)}`);
+      window.PBApp.setActiveChild(child.id);
+    };
+    return el('div', { class: 'gu-kids', role: 'group', 'aria-label': 'Showing child' },
+      el('span', { class: 'gu-kids-label', 'aria-hidden': 'true' }, 'Showing'),
+      list.map((child) => el('button', { type: 'button', class: 'gu-kid', id: 'gu-kid-' + child.id, 'aria-pressed': String(child.id === activeId),
+        onclick: () => pick(child) },
+      el('span', { class: 'gu-kid-avatar', 'aria-hidden': 'true' }, child.settings.avatar),
+      el('span', { class: 'gu-kid-name' }, kidName(child)))));
+  }
+
   function cornerView() {
     const state = S();
     const current = TABS.find((t) => t.id === tab) || TABS[0];
@@ -196,6 +273,7 @@
           el('h1', null, 'Grown-up corner'),
           el('p', { class: 'gu-sub' }, state.settings.childName ? `How ${state.settings.childName} is doing, and what ${state.settings.childName} can pick` : 'Patterns, ideas and settings')),
         el('button', { type: 'button', class: 'gu-lock', id: 'gu-lock', onclick: lock }, 'Lock 🔒')),
+      childSwitcher(),
       tabBar(),
       el('div', { class: 'gu-panel', id: 'gu-panel', role: 'tabpanel', 'aria-labelledby': 'gu-tab-' + current.id, 'data-tab': current.id },
         current.build(state)));
@@ -264,6 +342,7 @@
           (o) => o.days === rangeDays, (o) => { rangeDays = o.days; rerender([o.id]); }),
         ranged.length ? null : el('p', { class: 'gu-hint' }, `No picks in ${rangeText} yet.`)),
       tiles,
+      hint(`${capitalize(reward.many)} and picks count every family, hidden ones too.`, { class: 'gu-hint gu-tiles-note', id: 'gu-tiles-note' }),
       card('Family by family', hint(`Counts are for ${rangeText}. "Last picked" looks at all time.`),
         el('ul', { class: 'fam-rows' }, head, rows)),
       el('div', { class: 'gu-two' },
@@ -462,11 +541,106 @@
           el('button', { type: 'submit', class: 'primary' }, 'Add'))));
   }
 
+  /** Radio tiles for a child's picture. Selection is shown without a re-render so typing elsewhere is never lost. */
+  function avatarPicker(group, chosen, label) {
+    return el('fieldset', { class: 'avatar-pick' },
+      el('legend', null, label),
+      PB.AVATARS.map((emoji, i) => el('label', { class: 'avatar-tile' + (emoji === chosen ? ' selected' : '') },
+        el('input', { type: 'radio', class: 'visually-hidden', name: group, id: `${group}-${i}`, value: emoji, checked: emoji === chosen,
+          'aria-label': emoji,
+          onchange: (e) => {
+            drafts[group] = emoji;
+            for (const tile of e.target.closest('fieldset').querySelectorAll('.avatar-tile')) tile.classList.toggle('selected', tile.contains(e.target));
+          } }),
+        el('span', { 'aria-hidden': 'true' }, emoji))));
+  }
+  const chosenAvatar = (form, group) => { const on = form.querySelector(`input[name="${group}"]:checked`); return on ? on.value : ''; };
+
+  function kidRow(child, list) {
+    const name = kidName(child);
+    const editBtn = 'gu-kid-edit-' + child.id;
+    const last = list.length <= 1;
+    if (editingKid === child.id) {
+      const close = () => { editingKid = null; clearDrafts('gu-kid-name', 'gu-kid-av'); };
+      const cancel = () => { close(); rerender([editBtn]); };
+      return el('li', { class: 'kid-row editing', 'data-child': child.id },
+        el('form', {
+          class: 'kid-form', 'aria-label': `Edit ${name}`,
+          onkeydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } },
+          onsubmit: (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const newName = form.querySelector('#gu-kid-name').value;
+            const avatar = chosenAvatar(form, 'gu-kid-av');
+            close();
+            nextFocus = [editBtn];
+            announce(`Saved ${newName.trim()}`);
+            window.PBApp.commitFamily(PB.updateChild(F(), child.id, (c) => PB.setAvatar(PB.setChildName(c, newName), avatar)));
+          },
+        },
+        el('label', { class: 'mini-field grow' }, el('span', null, 'Name'),
+          draftInput('gu-kid-name', child.settings.childName, { maxlength: 30, required: true, pattern: '.*\\S.*', autocomplete: 'off' })),
+        avatarPicker('gu-kid-av', drafts['gu-kid-av'] || child.settings.avatar, 'Picture'),
+        el('span', { class: 'btn-actions' },
+          el('button', { type: 'submit', class: 'primary' }, 'Save'),
+          el('button', { type: 'button', onclick: cancel }, 'Cancel'))));
+    }
+    const remove = () => {
+      if (last || !window.confirm(`Remove ${name}? Their picks are kept in backups but hidden here.`)) return;
+      const i = list.indexOf(child);
+      const near = [list[i + 1], list[i - 1]].filter(Boolean).map((c) => 'gu-kid-edit-' + c.id);
+      nextFocus = [...near, 'gu-kid-add-name'];
+      announce(`Removed ${name}`);
+      window.PBApp.commitFamily(PB.removeChild(F(), child.id));
+    };
+    return el('li', { class: 'kid-row', 'data-child': child.id },
+      el('span', { class: 'kid-avatar', 'aria-hidden': 'true' }, child.settings.avatar),
+      el('span', { class: 'kid-name' }, el('span', null, name),
+        list.length > 1 && child.id === window.PBApp.activeChildId() ? tag('shown now') : null),
+      el('span', { class: 'btn-actions' },
+        el('button', { type: 'button', id: editBtn, 'aria-label': `Edit ${name}`,
+          onclick: () => { editingKid = child.id; clearDrafts('gu-kid-name', 'gu-kid-av'); rerender(['gu-kid-name']); } }, 'Edit'),
+        el('button', { type: 'button', class: 'danger', id: 'gu-kid-rm-' + child.id, disabled: last,
+          'aria-label': last ? `Remove ${name} (not possible: there must be at least one child)` : `Remove ${name}`, onclick: remove }, 'Remove')));
+  }
+
+  /** Family-wide: every child on this device. The rest of Settings is for the child shown now. */
+  function childrenCard() {
+    const list = kids();
+    const used = new Set(list.map((c) => c.settings.avatar));
+    const fresh = PB.AVATARS.find((a) => !used.has(a)) || PB.AVATARS[0];
+    const add = (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const name = form.querySelector('#gu-kid-add-name').value;
+      const avatar = chosenAvatar(form, 'gu-kid-add-av');
+      clearDrafts('gu-kid-add-name', 'gu-kid-add-av');
+      nextFocus = ['gu-kid-add-name'];
+      announce(`Added ${name.trim()}. Choose them with the buttons at the top to set up their settings.`);
+      window.PBApp.commitFamily(PB.addChild(F(), name, avatar));
+    };
+    return card('Children',
+      hint('Each child has their own picks, rewards and settings on this device.'),
+      el('ul', { class: 'kid-rows' }, list.map((c) => kidRow(c, list))),
+      list.length <= 1 ? hint('There must always be at least one child, so the only one can’t be removed.', { class: 'gu-hint kid-last' }) : null,
+      el('form', { class: 'add-form kid-add', onsubmit: add, 'aria-label': 'Add a child' },
+        el('h3', null, 'Add a child'),
+        el('label', { class: 'mini-field' }, el('span', null, 'Name'),
+          draftInput('gu-kid-add-name', '', { maxlength: 30, required: true, pattern: '.*\\S.*', placeholder: 'e.g. Mia', autocomplete: 'off' })),
+        avatarPicker('gu-kid-add-av', drafts['gu-kid-add-av'] || fresh, 'Picture'),
+        el('button', { type: 'submit', class: 'primary', id: 'gu-kid-add' }, 'Add child')));
+  }
+
   function settingsTab(state) {
     const all = PB.familiesWithSettings(PB.FAMILIES, state);
     const current = PB.rewardOf(state);
     const who = state.settings.childName || 'the child';
     return el('div', { class: 'gu-stack' },
+      childrenCard(),
+      kids().length > 1
+        ? el('p', { class: 'gu-for', id: 'gu-for' }, 'These settings are for ',
+          el('span', { class: 'gu-for-who' }, el('span', { 'aria-hidden': 'true' }, state.settings.avatar + ' '), kidName(state)), '.')
+        : null,
       el('div', { class: 'gu-two' },
         card('Child',
           el('form', { class: 'gu-field', onsubmit: (e) => { e.preventDefault(); saveName(e.currentTarget.querySelector('#gu-name').value); } },
@@ -501,7 +675,7 @@
 
   // ---------- Backup ----------
   function download() {
-    const blob = new Blob([PB.exportBackup(S())], { type: 'application/json' });
+    const blob = new Blob([PB.exportFamilyBackup(F())], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = el('a', { href: url, download: `pick-and-bloom-backup-${today()}.json`, hidden: true });
     document.body.append(link);
@@ -527,7 +701,7 @@
     let text;
     try { text = await readText(file); } catch (e) { text = null; }
     if (!unlocked || location.hash !== '#grownups') return; // left the corner while the file was read
-    const result = text === null ? { ok: false, error: "That file couldn't be read." } : PB.importBackup(text);
+    const result = text === null ? { ok: false, error: "That file couldn't be read." } : PB.importFamilyBackup(text);
     if (!result.ok) {
       backupNote = { kind: 'error', where: 'restore', text: result.error };
       rerender(['gu-restore']);
@@ -540,7 +714,7 @@
     }
     backupNote = { kind: 'ok', where: 'restore', text: 'Backup restored ✓' };
     nextFocus = ['gu-restore'];
-    apply(PB.mergeStates(S(), result.state));
+    window.PBApp.commitFamily(PB.mergeFamilies(F(), result.family));
   }
 
   function backupTab() {
@@ -549,7 +723,7 @@
       : null);
     return el('div', { class: 'gu-stack gu-two' },
       card('Download a backup',
-        hint('Saves every pick and setting on this device to a file. Keep it somewhere safe.'),
+        hint('Saves every child’s picks and settings on this device to one file. Keep it somewhere safe.'),
         el('button', { type: 'button', class: 'primary', id: 'gu-download', onclick: download }, '⬇️ Download backup'),
         note('download')),
       card('Restore from a backup',
@@ -592,7 +766,9 @@
     if (location.hash === '#grownups') return;
     unlocked = false;
     editing = null;
+    editingKid = null;
     backupNote = null;
+    clearAllDrafts();
     cancelHold();
   });
 
