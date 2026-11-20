@@ -816,6 +816,10 @@
       const kind = status ? status.kind : 'waiting';
       return el('div', { class: 'gu-stack' }, card('Sync across devices',
         el('p', { class: 'sync-who' }, 'Signed in as ', el('strong', null, sync.email() || 'your account')),
+        sync.switchedAccount()
+          ? el('p', { class: 'gu-note ok sync-switched', id: 'gu-sync-switched' },
+            `This device now shows ${sync.email() || 'this login'}'s children. The other login's progress is kept on this device and comes back when it signs in again.`)
+          : null,
         el('p', { class: 'sync-status is-' + kind, id: 'gu-sync-status', role: 'status' }, syncStatusText(status)),
         hint("Every child's picks and settings sync together, about once a minute and soon after each change."),
         el('div', { class: 'sync-actions' },

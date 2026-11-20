@@ -264,3 +264,117 @@ test('if the app refuses the synced family, the status is an error (not "synced"
   await sync.start();
   assert.equal(statuses.at(-1).kind, 'error');
 });
+
+// ---------- a different account on the same device ----------
+/** A fake server holding one row per user, and a client that can sign in as any of them. */
+function multiAccountClient(rows = {}) {
+  const db = { rows: { ...rows }, upserts: [] };
+  let session = null;
+  return {
+    db,
+    auth: {
+      async getSession() { return { data: { session } }; },
+      async signInWithPassword({ email }) {
+        const id = email.split('@')[0];
+        session = { user: { id, email } };
+        return { data: { user: session.user, session }, error: null };
+      },
+      async signOut() { session = null; return { error: null }; },
+    },
+    from() {
+      return {
+        select() { return { eq(col, id) { return { async maybeSingle() { return { data: db.rows[id] ? { state: db.rows[id] } : null, error: null }; } }; } }; },
+        async upsert(row) { db.upserts.push(row.user_id); db.rows[row.user_id] = row.state; return { error: null }; },
+      };
+    },
+  };
+}
+const kidNames = (f) => FAM.activeChildren(f).map((c) => c.settings.childName || c.id).sort();
+function accountHarness(client, local) {
+  const storage = memoryStorage();
+  storage.removeItem = (k) => { delete storage.data[k]; };
+  let state = local;
+  const infos = [];
+  const sync = createSync({ client, storage, getState: () => state, setState: (s, info) => { state = s; infos.push(info); return true; }, onStatus() {} });
+  return { sync, storage, infos, get state() { return state; }, set state(s) { state = s; } };
+}
+
+test('signing in as a different account never uploads the first account\'s children; they are kept aside', async () => {
+  const bFamily = FAM.addChild(FAM.emptyFamily(), 'Bea', '🦊', T1, 'kid-bea');
+  const client = multiAccountClient({ u2: bFamily });
+  const h = accountHarness(client, FAM.addChild(named('Sam', T1), 'Mia', '🐰', T1, 'kid-mia'));
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.deepEqual(kidNames(client.db.rows.u1), ['Mia', 'Sam']);
+  h.state = picked('calm', 'rest', T2, h.state); // Sam plays while signed in as u1...
+  await h.sync.signOut();
+  h.state = FAM.updateChild(h.state, FIRST, (c) => PB.pickActivity(c, DAY, 'play', 'tag', T2)); // ...and signed out
+  await h.sync.signIn('u2@example.com', 'x');
+  assert.deepEqual(kidNames(client.db.rows.u2), ['Bea', 'child-1']); // none of u1's children
+  assert.deepEqual(kidNames(h.state), ['Bea', 'child-1']);
+  assert.equal(h.sync.switchedAccount(), true);
+  assert.deepEqual(h.infos.at(-1), { switched: true });
+  assert.equal(h.storage.data['pickbloom.syncLinked'], 'u2');
+  const aside = JSON.parse(h.storage.data['pickbloom.v1.account-u1']);
+  assert.deepEqual(kidNames(aside), ['Mia', 'Sam']);
+  assert.deepEqual(Object.keys(PB.entriesForDate(FAM.getChild(aside, FIRST), DAY)).sort(), ['calm', 'move', 'play']);
+  assert.ok(!JSON.stringify(client.db.rows.u2).includes('Sam'));
+});
+
+test('when the first account signs in again, its kept-aside family comes back, merged with its row', async () => {
+  const client = multiAccountClient({ u2: FAM.emptyFamily() });
+  const h = accountHarness(client, named('Sam', T1));
+  await h.sync.signIn('u1@example.com', 'x');
+  await h.sync.signOut();
+  h.state = picked('calm', 'rest', T2, h.state);     // picked on this device while signed out
+  await h.sync.signIn('u2@example.com', 'x');
+  await h.sync.signOut();
+  // meanwhile, another of u1's devices added Leo
+  client.db.rows.u1 = FAM.addChild(client.db.rows.u1, 'Leo', '🦁', T2, 'kid-leo');
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.deepEqual(kidNames(h.state), ['Leo', 'Sam']);
+  assert.deepEqual(Object.keys(PB.entriesForDate(first(h.state), DAY)).sort(), ['calm', 'move']);
+  assert.deepEqual(kidNames(client.db.rows.u1), ['Leo', 'Sam']);
+  assert.equal(h.storage.data['pickbloom.v1.account-u1'], undefined); // restored, so no longer kept aside
+  assert.deepEqual(kidNames(JSON.parse(h.storage.data['pickbloom.v1.account-u2'])), ['child-1']);
+  assert.equal(h.storage.data['pickbloom.syncLinked'], 'u1');
+});
+
+test('the same account signing in again merges as usual', async () => {
+  const client = multiAccountClient();
+  const h = accountHarness(client, named('Sam', T1));
+  await h.sync.signIn('u1@example.com', 'x');
+  await h.sync.signOut();
+  h.state = picked('calm', 'rest', T2, h.state);
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.equal(h.sync.switchedAccount(), false);
+  assert.deepEqual(Object.keys(PB.entriesForDate(first(client.db.rows.u1), DAY)).sort(), ['calm', 'move']);
+  assert.equal(Object.keys(h.storage.data).some((k) => k.startsWith('pickbloom.v1.account-')), false);
+});
+
+test('a sync with nothing new makes no upload', async () => {
+  const client = fakeClient({ remote: picked('move', 'run', T1) });
+  const h = harness(client, picked('move', 'run', T1));
+  await h.sync.start();
+  assert.equal(client.db.upserts, 0); // identical to the server's copy
+  const c2 = fakeClient({ remote: picked('move', 'run', T1) });
+  const h2 = harness(c2, picked('calm', 'rest', T2));
+  await h2.sync.start();
+  assert.equal(c2.db.upserts, 1);
+  await h2.sync.syncNow();
+  await h2.sync.syncNow();
+  assert.equal(c2.db.upserts, 1);
+  assert.equal(h2.statuses.at(-1).kind, 'synced');
+});
+
+test('signed in in another tab: this tab starts syncing too (after the callback)', async () => {
+  const client = fakeClient({ signedIn: false });
+  let fire;
+  client.auth.onAuthStateChange = (fn) => { fire = fn; return { data: { subscription: { unsubscribe() {} } } }; };
+  const h = harness(client, picked('move', 'run', T1));
+  await h.sync.start();
+  fire('SIGNED_IN', { user: { id: 'u1', email: 'parent@example.com' } });
+  assert.equal(client.db.calls, 0); // nothing inside the callback itself
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(h.sync.isSignedIn(), true);
+  assert.equal(client.db.upserts, 1);
+});

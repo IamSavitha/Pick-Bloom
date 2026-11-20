@@ -138,10 +138,11 @@
   }
 
   /** Keeps the playing child if still there (or falls back), and remembers the choice on this device. */
-  function adoptFamily(next, renamed) {
+  function adoptFamily(next, renamed, fresh) {
     const before = activeChildId;
     family = next;
-    activeChildId = PB.chooseActiveChild(family, renamed && renamed.from === activeChildId ? renamed.to : activeChildId);
+    const wanted = fresh ? null : renamed && renamed.from === activeChildId ? renamed.to : activeChildId;
+    activeChildId = PB.chooseActiveChild(family, wanted);
     state = PB.getChild(family, activeChildId);
     if (activeChildId !== before) remember(activeChildId);
     return activeChildId !== before;
@@ -164,16 +165,17 @@
 
   /**
    * A newer family came from sync or from another open tab: take it without starting another sync.
-   * `renamed` ({ from, to }) says the playing child got a new id. `save: false` when it is already what's stored.
+   * `renamed` ({ from, to }) says the playing child got a new id. `fresh`: a different account's family, so choose
+   * who's playing afresh. `save: false` when it is already what's stored.
    */
-  function replaceFamily(next, { renamed = null, save = true } = {}) {
+  function replaceFamily(next, { renamed = null, fresh = false, save = true } = {}) {
     if (!PB.isValidFamily(next)) return false;
     if (JSON.stringify(next) === JSON.stringify(family)) return true; // nothing new: no re-render
     const hadMany = manyKids();
-    const switched = adoptFamily(next, renamed);
+    const switched = adoptFamily(next, renamed, fresh);
     // A child added (or the playing child removed) somewhere else: ask "Who's playing?" again.
     if (!manyKids()) choosing = false;
-    else if (!hadMany || switched) choosing = true;
+    else if (fresh || !hadMany || switched) choosing = true;
     if (save) saveFamily();
     render();
     return true;
@@ -669,7 +671,7 @@
         sync = PB.createSync({
           client,
           getState: () => family,
-          setState: (next, info) => replaceFamily(next, { renamed: info && info.renamed }),
+          setState: (next, info) => replaceFamily(next, { renamed: info && info.renamed, fresh: !!(info && info.switched) }),
           storage, // remembers which account this device has joined, so the question below is asked once
           onFirstChildConflict: ({ localName, incomingName }) => window.confirm(
             `Is ${incomingName} the same child as ${localName}? OK = same child (combine). Cancel = different children (keep both).`),

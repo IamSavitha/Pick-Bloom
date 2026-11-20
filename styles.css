@@ -1139,5 +1139,6 @@ dialog:not([open]) { display: none; }
 .sync-status { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--gu-soft); font-weight: 600; }
 .sync-status.is-synced { background: #eef8e8; color: #1f5a33; }
 .sync-status.is-error { background: #fdecea; color: var(--gu-danger); }
+.gu-note.sync-switched { margin: 0 0 12px; overflow-wrap: anywhere; }
 .sync-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .grownups .sync-actions button { min-width: 140px; }

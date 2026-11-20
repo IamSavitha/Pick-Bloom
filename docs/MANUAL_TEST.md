@@ -113,6 +113,7 @@ Go through this on a real **iPad**, **phone** and **laptop** before a release. S
 - [ ] Make different picks on both devices while one is offline. After syncing, both devices show all the picks.
 - [ ] **Sign out:** syncing stops on that device, its data stays, and the other device is still signed in.
 - [ ] Without signing in again, reloading the signed-out device makes no requests to `supabase.co`.
+- [ ] **A different login on the same device:** sign in as login A, sign out, then sign in as login B. The note "This device now shows …'s children" appears, only B's children show, and none of A's children appear on B's other devices. Sign out and back in as A: A's children (including anything picked while signed out) come back.
 
 ## Layout
 
