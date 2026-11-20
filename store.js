@@ -10,6 +10,15 @@
   const MAX_NAME = 30;
   const MAX_LABEL = 24;
 
+  /** What a finished activity earns. Grown-ups choose one; it changes everywhere, past rewards included. */
+  const REWARDS = [
+    { id: 'flower', emoji: '🌸', one: 'flower', many: 'flowers' },
+    { id: 'star', emoji: '⭐', one: 'star', many: 'stars' },
+    { id: 'sun', emoji: '☀️', one: 'sun', many: 'suns' },
+    { id: 'candy', emoji: '🍬', one: 'candy', many: 'candies' },
+    { id: 'balloon', emoji: '🎈', one: 'balloon', many: 'balloons' },
+  ];
+
   // ---------- dates (local calendar days as "YYYY-MM-DD") ----------
   function pad(n) { return String(n).padStart(2, '0'); }
   function dateKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -19,7 +28,7 @@
 
   // ---------- shape ----------
   function defaultSettings() {
-    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], activityOverrides: {}, updatedAt: EPOCH };
+    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], activityOverrides: {}, reward: 'flower', updatedAt: EPOCH };
   }
   function emptyState() { return { version: VERSION, settings: defaultSettings(), entries: [] }; }
 
@@ -44,7 +53,7 @@
     return isObject(s) && isString(s.childName) && typeof s.readAloud === 'boolean'
       && isStringArray(s.hiddenFamilies) && isStringArray(s.hiddenActivities)
       && Array.isArray(s.customActivities) && s.customActivities.every(isValidCustom)
-      && isValidOverrides(s.activityOverrides) && isString(s.updatedAt);
+      && isValidOverrides(s.activityOverrides) && REWARDS.some((r) => r.id === s.reward) && isString(s.updatedAt);
   }
   function isValidState(s) {
     return isObject(s) && s.version === VERSION && isValidSettings(s.settings)
@@ -54,7 +63,7 @@
   /**
    * Bring older saved shapes up to date:
    * - v1 allowed one pick per family and marked a cleared pick with activityId null;
-   * - settings added later (activityOverrides) get their defaults.
+   * - settings added later (activityOverrides, reward) get their defaults.
    */
   function upgradeState(s) {
     if (!isObject(s)) return s;
@@ -63,8 +72,14 @@
       const entries = out.entries.filter((e) => isObject(e) && e.activityId !== null).map((e) => ({ ...e, removed: false }));
       out = { ...out, version: VERSION, entries };
     }
-    if (out.version === VERSION && isObject(out.settings) && out.settings.activityOverrides === undefined) {
-      out = { ...out, settings: { ...out.settings, activityOverrides: {} } };
+    if (out.version === VERSION && isObject(out.settings)) {
+      const defaults = defaultSettings();
+      const missing = Object.keys(defaults).filter((k) => out.settings[k] === undefined);
+      if (missing.length) {
+        const filled = { ...out.settings };
+        for (const k of missing) filled[k] = defaults[k];
+        out = { ...out, settings: filled };
+      }
     }
     return out;
   }
@@ -164,6 +179,10 @@
   function setChildName(state, name, now) {
     return updateSettings(state, { childName: String(name).trim().slice(0, MAX_NAME) }, now);
   }
+  function setReward(state, rewardId, now) {
+    return REWARDS.some((r) => r.id === rewardId) ? updateSettings(state, { reward: rewardId }, now) : state;
+  }
+  function rewardOf(state) { return REWARDS.find((r) => r.id === state.settings.reward) || REWARDS[0]; }
   function setReadAloud(state, on, now) { return updateSettings(state, { readAloud: !!on }, now); }
   function toggleFamilyHidden(state, familyId, now) {
     return updateSettings(state, { hiddenFamilies: toggleIn(state.settings.hiddenFamilies, familyId) }, now);
@@ -281,9 +300,9 @@
   }
 
   const api = {
-    STORAGE_KEY, FEELINGS, dateKey, addDays, daysBetween, emptyState, isValidState, upgradeState, loadState, saveState,
+    STORAGE_KEY, FEELINGS, REWARDS, dateKey, addDays, daysBetween, emptyState, isValidState, upgradeState, loadState, saveState,
     pickActivity, unpickActivity, markDone, removePick, activeEntries, entriesForDate, activityKey,
-    setChildName, setReadAloud, toggleFamilyHidden, toggleActivityHidden, addCustomActivity, renameActivity, resetActivity,
+    setChildName, setReadAloud, setReward, rewardOf, toggleFamilyHidden, toggleActivityHidden, addCustomActivity, renameActivity, resetActivity,
     familiesWithSettings, visibleFamilies, findActivity, exportBackup, importBackup, mergeStates,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;

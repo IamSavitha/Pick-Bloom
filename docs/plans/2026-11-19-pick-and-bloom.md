@@ -1126,6 +1126,7 @@ Run `npm test` and confirm nothing regressed.
 >   - Remove asks `confirm('Remove "{label}" from {day}? This also removes its flower.')` and then calls `commit(PB.removePick(state, date, fam, act))`.
 >   - Empty day: "No picks on this day."
 >   - Explanation text: "Use this to fix picks added by mistake. {name} can only take back picks that aren't finished yet; finished ones can only be removed here."
+> - **Settings → "Reward symbol":** five big radio tiles from `PB.REWARDS` (emoji plus name). Choosing one calls `commit(PB.setReward(state, id))`. Use `PB.rewardOf(state)` for the current symbol.
 > - **Settings:** the read-aloud checkbox label is **"Sounds & voice"**, with the hint "Reads buttons aloud and plays a happy chime."
 > - Support `?unlock=1&tab=fix` for screenshots.
 

@@ -263,3 +263,25 @@ test('upgradeState fills in settings added after a save was made (activityOverri
   assert.equal(PB.loadState(storage).recovered, false);
 });
 
+test('reward symbol: five choices, flower by default; setReward ignores unknown ids', () => {
+  assert.deepEqual(PB.REWARDS.map((r) => r.id), ['flower', 'star', 'sun', 'candy', 'balloon']);
+  for (const r of PB.REWARDS) assert.ok(r.emoji && r.one && r.many, r.id);
+  assert.equal(PB.emptyState().settings.reward, 'flower');
+  let s = PB.setReward(PB.emptyState(), 'candy', T1);
+  assert.equal(s.settings.reward, 'candy');
+  assert.equal(s.settings.updatedAt, T1.toISOString());
+  assert.equal(PB.setReward(s, 'unicorn', T2), s);
+  assert.equal(PB.rewardOf(s).many, 'candies');
+  assert.equal(PB.rewardOf({ settings: { reward: 'gone' } }).id, 'flower');
+});
+
+test('upgradeState fills in a missing reward setting with flower', () => {
+  const s = PB.emptyState();
+  delete s.settings.reward;
+  assert.equal(PB.isValidState(s), false);
+  assert.equal(PB.upgradeState(s).settings.reward, 'flower');
+  const bad = PB.emptyState();
+  bad.settings.reward = 'unicorn';
+  assert.equal(PB.isValidState(bad), false);
+});
+

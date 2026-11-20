@@ -84,6 +84,7 @@ The user is a toddler boy who can't read yet, so pictures, sounds and celebratio
 - **Settings:**
   - Child's name.
   - Sounds & voice on or off (read-aloud plus the chime).
+  - **Reward symbol** (amended 2026-11-19): 🌸 Flower (default), ⭐ Star, ☀️ Sun, 🍬 Candy or 🎈 Balloon. It changes everywhere: the celebration burst, progress text ("⭐ 3 stars today"), the garden scene (symbols instead of drawn flowers), and past rewards too. The tab reads "My Garden" for flowers and "My Rewards" otherwise.
   - Show or hide families.
   - Buttons, grown-up only (amended 2026-11-19):
     - **Add** a new button.
