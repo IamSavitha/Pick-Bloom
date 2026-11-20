@@ -176,6 +176,12 @@
 
   const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const PETALS = ['🌸', '🌼', '🌷', '⭐'];
+  const reward = () => PB.rewardOf(state);
+  const isFlower = () => reward().id === 'flower';
+  const countOf = (n) => `${n} ${n === 1 ? reward().one : reward().many}`;
+  const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+  /** The burst: the flower mix for flowers, otherwise mostly the chosen reward with a little sparkle. */
+  const burstEmoji = (i) => (isFlower() ? PETALS[i % PETALS.length] : i % 5 === 4 ? '✨' : reward().emoji);
 
   function celebrate() {
     const old = document.querySelector('.celebrate');
@@ -188,7 +194,7 @@
         petals.push(el('span', { class: 'petal', style: {
           '--dx': (Math.cos(angle) * dist).toFixed(1) + 'vmin', '--dy': (Math.sin(angle) * dist).toFixed(1) + 'vmin',
           '--spin': Math.round((Math.random() - 0.5) * 540) + 'deg', '--delay': Math.round(Math.random() * 120) + 'ms',
-        } }, PETALS[i % PETALS.length]));
+        } }, burstEmoji(i)));
       }
     }
     const overlay = el('div', { class: 'celebrate', 'aria-hidden': 'true' }, petals,
@@ -270,14 +276,14 @@
     return (PB.entriesForDate(state, date)[familyId] || []).find((e) => e.activityId === activityId) || null;
   }
 
-  /** Show a picker tile as not picked, picked (✓) or done (🌸, can't be unpicked). */
+  /** Show a picker tile as not picked, picked (✓) or done (the reward symbol, can't be unpicked). */
   function paintTile(tile, entry) {
     const done = !!(entry && entry.doneAt);
     tile.setAttribute('aria-pressed', String(!!entry));
     tile.disabled = done;
     tile.classList.toggle('picked', !!entry);
     tile.classList.toggle('done', done);
-    tile.querySelector('.tile-check').textContent = done ? '🌸' : entry ? '✓' : '';
+    tile.querySelector('.tile-check').textContent = done ? reward().emoji : entry ? '✓' : '';
     const isNew = tile.querySelector('.badge-new');
     if (isNew) isNew.hidden = !!entry; // tried now, so no longer "new"
   }
@@ -329,7 +335,7 @@
           if (state !== before) {
             chime();
             speak('Yay! ' + FEELING_TEXT[feeling].text);
-            announce.textContent = `Flower grown: ${activity.label}`;
+            announce.textContent = `${capitalize(reward().one)} earned: ${activity.label}`;
             celebrate();
             if (row) row.classList.add('bloom');
           }
@@ -348,7 +354,7 @@
       el('span', { class: 'pick-emoji', 'aria-hidden': 'true' }, activity.emoji),
       el('span', { class: 'label' }, activity.label),
       entry.doneAt
-        ? el('span', { class: 'pick-done', role: 'img', 'aria-label': feeling ? feeling.text : 'Done' }, '🌸', feeling ? feeling.face : '')
+        ? el('span', { class: 'pick-done', role: 'img', 'aria-label': feeling ? feeling.text : 'Done' }, reward().emoji, feeling ? feeling.face : '')
         : el('button', { type: 'button', class: 'did-it', 'aria-label': `I did it: ${activity.label}`, onclick: () => openFeeling(family, activity) }, 'I did it!'));
   }
 
@@ -386,7 +392,7 @@
         el('div', { class: 'hello-text' },
           el('h1', null, name ? `Hi ${name}!` : 'Hi there!'),
           el('p', { class: 'bubble' }, 'Pick at least one from each family!'))),
-      el('p', { class: 'progress' }, `🌸 ${flowers} ${flowers === 1 ? 'flower' : 'flowers'} today · ${withPick} of ${families.length} ${families.length === 1 ? 'family' : 'families'}`),
+      el('p', { class: 'progress' }, `${reward().emoji} ${countOf(flowers)} today · ${withPick} of ${families.length} ${families.length === 1 ? 'family' : 'families'}`),
       el('div', { class: 'families' }, families.map((f) => familyCard(f, picks[f.id] || [], all))));
   }
 
@@ -397,12 +403,16 @@
       .sort((a, b) => a.doneAt.localeCompare(b.doneAt));
   }
 
+  /** One finished pick in the garden: an SVG flower, or the chosen reward on a family-colored sticker. */
   function flowerFor(entry, families, small, index) {
     const family = families.find((f) => f.id === entry.familyId) || FALLBACK_COLORS;
     const activity = PB.findActivity(families, entry.familyId, entry.activityId);
-    const svg = flowerSvg(family.color, family.light);
-    if (small) return el('span', { class: 'mini-flower', role: 'img', 'aria-label': activity.label, title: activity.label }, svg);
-    return el('figure', { class: 'flower', style: { '--i': String(index || 0) } }, svg,
+    const r = reward();
+    const symbol = r.id === 'flower'
+      ? flowerSvg(family.color, family.light)
+      : el('span', { class: small ? 'mini-reward' : 'sticker', style: famStyle(family), 'aria-hidden': 'true' }, r.emoji);
+    if (small) return el('span', { class: 'mini-flower', role: 'img', 'aria-label': activity.label, title: activity.label }, symbol);
+    return el('figure', { class: 'flower', style: { '--i': String(index || 0) } }, symbol,
       el('figcaption', null, el('span', { class: 'emoji', 'aria-hidden': 'true' }, activity.emoji), el('span', { class: 'flower-label' }, activity.label)));
   }
 
@@ -430,7 +440,7 @@
     return el('section', { class: 'view garden' },
       el('div', { class: 'garden-title' },
         el('div', { class: 'buddy' }, sproutSvg(todays.length ? 'cheer' : 'wave')),
-        el('h1', null, name ? `${name}'s garden` : 'My garden')),
+        el('h1', null, isFlower() ? (name ? `${name}'s garden` : 'My garden') : (name ? `${name}'s rewards` : 'My rewards'))),
       el('section', { class: 'garden-scene', 'aria-labelledby': 'garden-today' },
         el('span', { class: 'sun', 'aria-hidden': 'true' }),
         el('span', { class: 'cloud cloud-1', 'aria-hidden': 'true' }),
@@ -438,12 +448,12 @@
         el('h2', { id: 'garden-today' }, 'Today'),
         todays.length
           ? el('div', { class: 'flowers' }, todays.map((e, i) => flowerFor(e, families, false, i)))
-          : el('p', { class: 'waiting' }, 'Your garden is waiting for its first flower! 🌱'),
+          : el('p', { class: 'waiting' }, isFlower() ? 'Your garden is waiting for its first flower! 🌱' : `Your first ${reward().one} is waiting! 🌱`),
         el('div', { class: 'grass', 'aria-hidden': 'true' })),
       el('section', { class: 'garden-box' },
         el('h2', null, 'This week'),
         el('ul', { class: 'week' }, week)),
-      el('p', { class: 'total' }, `🌸 ${total} ${total === 1 ? 'flower' : 'flowers'} grown so far`));
+      el('p', { class: 'total' }, `${reward().emoji} ${countOf(total)} ${isFlower() ? 'grown ' : ''}so far`));
   }
 
   // ---------- Grown-ups (placeholder until Task 5 registers the real view) ----------
@@ -455,6 +465,7 @@
   const banner = document.getElementById('banner');
   const app = document.getElementById('app');
   const announce = document.getElementById('announce');
+  const gardenTab = document.querySelector('.tabs a[href="#garden"]');
   let renderedView = null; // animations (Sprout's wave, flowers growing) play only when the view changes
   const builders = { today: todayView, garden: gardenView, grownups: grownupsView };
   let renderedDate = null;
@@ -474,6 +485,8 @@
     app.toggleAttribute('data-animate', view !== renderedView);
     renderedView = view;
     app.replaceChildren((views[view] || builders[view])());
+    gardenTab.replaceChildren(el('span', { class: 'tab-icon', 'aria-hidden': 'true' }, isFlower() ? '🌷' : reward().emoji),
+      isFlower() ? ' My Garden' : ' My Rewards');
     for (const link of document.querySelectorAll('.tabs a')) {
       if (link.getAttribute('href') === '#' + view) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
