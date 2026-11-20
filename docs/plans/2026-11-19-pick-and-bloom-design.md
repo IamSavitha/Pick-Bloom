@@ -1,0 +1,113 @@
+# Pick&Bloom — Design
+
+**Date:** 2026-11-19
+**Status:** Approved
+
+## What it is
+
+Pick&Bloom is a simple app for a young child. It's based on the "Pick One!" activity bank (`Kids_Pick_One_Activity_Button_Bank.pdf`), which has 12 families of activities. Each day the child picks one activity from each family. After doing it, he taps **"I did it!"** and a flower grows in his garden.
+
+Every pick, every finished activity and every "how was it?" face gets saved. That history shows the grown-ups his **patterns**: what he loves, what he avoids, and what he starts but doesn't finish. Gentle suggestions turn those patterns into ideas for helping him grow.
+
+Think of it like a sticker chart that remembers everything and quietly tells the parent what it noticed.
+
+## Requirements
+
+- **Works on laptop, phone and iPad.** It's one web address, it can be added to the home screen, and the screen layout adapts to each size.
+- **Simple.** Plain HTML, CSS and JavaScript, with no framework and no build step. Opening `index.html` directly still works.
+- **Same data on every device.** The child uses the iPad, and the parent checks patterns on a phone or laptop.
+- **Works offline.** Data is saved on the device first, and syncing catches up later.
+- **Private.** Each family's data is visible only to their own signed-in account. There's no AI and there are no analytics.
+
+## Approach
+
+**Local-first static web app, with optional Supabase sync.**
+
+- **Hosting:** the app is a few static files hosted anywhere (Vercel recommended). There's nothing to build.
+- **Saving:** every change is saved to the browser's `localStorage` straight away.
+- **Syncing:** when Supabase is configured and a grown-up has signed in, the app reads the family's one saved row, combines it with what the device has, and writes the combined result back. Because the combining step never loses information, devices end up agreeing even if both made changes while offline.
+- **Without Supabase:** with `config.js` left blank, the app runs as a single-device app.
+
+Alternatives considered:
+
+- **Only on the device, with export/import between devices.** Too clumsy for the iPad-plus-parent-phone setup.
+- **Next.js plus a database, like Manasu.** Too heavy for "keep it simple."
+
+## The child's side
+
+- **Today**
+  - **Family cards:** one card per visible family, in the PDF's colors.
+  - **Choosing:** tap a card to see that family's buttons (emoji plus a big word) and pick one. He can change his pick until it's done.
+  - **Finishing:** "I did it!" asks for a face (😄 Loved it / 🙂 It was okay / 😴 Tired), and then a flower blooms.
+- **Try something new:** buttons he has never tried show a ✨.
+- **Read aloud:** tapping a button reads its word out loud using the browser's built-in voice. Grown-ups can turn this off.
+- **My Garden**
+  - **Today's garden:** one flower per finished activity, in the family's color.
+  - **This week:** the last 7 days, row by row.
+  - **Grows only:** there are no streaks to break and no "you missed it" messages.
+
+## The grown-up side (behind "hold for 3 seconds")
+
+- **Patterns** (last 7 or 30 days)
+  - Flowers grown.
+  - Variety: buttons tried out of the total.
+  - Per family:
+    - Picks and finished.
+    - His favorite.
+    - Days since last picked.
+    - Time of day (morning / afternoon / evening).
+  - His most-loved activities, and a "not tried yet" list.
+- **Ideas:** suggestions from simple, transparent rules.
+  - **Skipped:** a family not picked for 5 or more days, plus an offer from it.
+  - **Repeat:** one activity is 70% or more of a family's picks over 14 days, plus two alternatives.
+  - **Dropped:** picked 3 or more times but finished less than half the time.
+  - **Loved:** rated 😄 three or more times.
+- **Settings:**
+  - Child's name.
+  - Read aloud on or off.
+  - Show or hide families.
+  - Show or hide buttons.
+  - Add custom buttons.
+- **Backup:** download a JSON file, and restore one. Restoring *adds* what's in the backup and never deletes anything.
+- **Sync:** sign in with email and password, see when it last synced, sync now, sign out.
+
+## Data
+
+```
+state = {
+  version: 1,
+  settings: { childName, readAloud, hiddenFamilies[], hiddenActivities["fam/act"],
+              customActivities[{familyId,id,label,emoji}], updatedAt },
+  entries: [{ date:"YYYY-MM-DD", familyId, activityId|null, pickedAt, doneAt|null,
+              feeling:"loved"|"okay"|"tired"|null, updatedAt }]
+}
+```
+
+- **One entry per family per day.** A cleared pick is kept as `activityId: null` so that syncing doesn't bring it back.
+- **Combining two devices' data:**
+  - Entries are matched by date and family. A finished entry wins over an unfinished one; otherwise the newer `updatedAt` wins.
+  - For settings, the newer `updatedAt` wins.
+- **Supabase:** one table, `pickbloom_state (user_id pk, state jsonb, updated_at)`, with row-level security set to "own row only."
+
+## Error handling
+
+- **Storage unavailable (private mode):** the app still works, and a banner says progress won't be saved.
+- **Saved data that can't be read:** it's set aside under `pickbloom.v1.corrupt`, and the app starts fresh with a banner.
+- **Bad backup file:** it's rejected with a friendly message, and the existing data isn't touched.
+- **Sync errors:** shown only in the grown-up Sync panel. The child never sees them, and data on the device is never lost.
+- **Offline:** if the Supabase script can't load, the app quietly runs on the device only.
+
+## Testing
+
+- **Automated (`node --test`, no dependencies):**
+  - The activity data.
+  - The data model: picks, settings, backup, combining device data.
+  - The pattern and suggestion rules.
+  - Syncing, against a fake Supabase client.
+- **Screens:**
+  - Headless Chrome screenshots at phone, iPad and laptop sizes.
+  - A manual checklist in `docs/MANUAL_TEST.md`.
+
+## Files
+
+`index.html`, `styles.css`, `activities.js`, `store.js`, `insights.js`, `sync.js`, `config.js`, `app.js`, `manifest.webmanifest`, icons, `supabase/schema.sql`, `tests/*.test.js`, `README.md`, `docs/`.
