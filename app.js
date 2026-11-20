@@ -103,18 +103,65 @@
   }
 
   // ---------- storage and state ----------
+  // The whole family (every child) is saved together; `state` is always the child who is playing now,
+  // so every store.js call below (pickActivity, markDone…) works on that one child.
   let storage = null;
   try { storage = window.localStorage; } catch (e) { /* storage blocked */ }
-  let { state, persistent, recovered } = PB.loadState(storage);
+  let { family, persistent, recovered } = PB.loadFamily(storage);
+  const ACTIVE_KEY = 'pickbloom.activeChild'; // which child is playing, remembered per device only
+  let activeChildId = PB.chooseActiveChild(family, readRemembered());
+  let state = PB.getChild(family, activeChildId);
+  let choosing = PB.activeChildren(family).length > 1; // "Who's playing?" once per page load
+  let focusAfterRender = null;
   let afterCommit = function () {};
   const views = {};
 
+  function readRemembered() {
+    try { return storage ? storage.getItem(ACTIVE_KEY) : null; } catch (e) { return null; }
+  }
+  function remember(id) {
+    try { if (storage) storage.setItem(ACTIVE_KEY, id); } catch (e) { /* best effort */ }
+  }
+  function saveFamily() {
+    if (persistent && !PB.saveFamily(storage, family)) persistent = false; // show the "can't save" banner
+  }
+  const kids = () => PB.activeChildren(family);
+  const manyKids = () => kids().length > 1;
+
   function commit(next) {
     if (next === state) return;
-    state = next;
-    if (persistent && !PB.saveState(storage, state)) persistent = false; // show the "can't save" banner
+    family = PB.updateChild(family, activeChildId, () => next);
+    state = PB.getChild(family, activeChildId);
+    saveFamily();
     render();
     afterCommit();
+  }
+
+  /** Replace the whole family (add/remove/rename a child, restore a backup). Keeps the playing child if still there. */
+  function commitFamily(next) {
+    if (!PB.isValidFamily(next)) return;
+    family = next;
+    activeChildId = PB.chooseActiveChild(family, activeChildId);
+    state = PB.getChild(family, activeChildId);
+    if (!manyKids()) choosing = false;
+    saveFamily();
+    render();
+    afterCommit();
+  }
+
+  function setActiveChild(id) {
+    const child = PB.getChild(family, id);
+    if (!child || child.removed) return;
+    activeChildId = id;
+    state = child;
+    remember(id);
+    render();
+  }
+
+  /** A child's name for screens; a child added before names existed may have none yet. */
+  function nameOf(child) {
+    const i = kids().indexOf(child);
+    return child.settings.childName || (i >= 0 ? `Child ${i + 1}` : 'Child');
   }
 
   // ---------- helpers ----------
@@ -393,7 +440,7 @@
       el('div', { class: 'hello' },
         el('div', { class: 'buddy' }, sproutSvg('wave')),
         el('div', { class: 'hello-text' },
-          el('h1', null, name ? `Hi ${name}!` : 'Hi there!'),
+          withChip(el('h1', null, name ? `Hi ${name}!` : 'Hi there!')),
           el('p', { class: 'bubble' }, 'Pick at least one from each family!'))),
       el('p', { class: 'progress' }, `${reward().emoji} ${countOf(flowers)} today · ${withPick} of ${families.length} ${families.length === 1 ? 'family' : 'families'}`),
       el('div', { class: 'families' }, families.map((f) => familyCard(f, picks[f.id] || [], all))));
@@ -443,7 +490,7 @@
     return el('section', { class: 'view garden' },
       el('div', { class: 'garden-title' },
         el('div', { class: 'buddy' }, sproutSvg(todays.length ? 'cheer' : 'wave')),
-        el('h1', null, isFlower() ? (name ? `${name}'s garden` : 'My garden') : (name ? `${name}'s rewards` : 'My rewards'))),
+        withChip(el('h1', null, isFlower() ? (name ? `${name}'s garden` : 'My garden') : (name ? `${name}'s rewards` : 'My rewards')))),
       el('section', { class: 'garden-scene', 'aria-labelledby': 'garden-today' },
         el('span', { class: 'sun', 'aria-hidden': 'true' }),
         el('span', { class: 'cloud cloud-1', 'aria-hidden': 'true' }),
@@ -457,6 +504,62 @@
         el('h2', null, 'This week'),
         el('ul', { class: 'week' }, week)),
       el('p', { class: 'total' }, `${reward().emoji} ${countOf(total)} ${isFlower() ? 'grown ' : ''}so far`));
+  }
+
+  // ---------- "Who's playing?" (only when there are 2+ children) ----------
+  const TILE_COLORS = [['#2a7a46', '#e0f4e4'], ['#1f6aa5', '#e1effa'], ['#b4541a', '#fdebdc'], ['#8a3d9c', '#f3e3f7'], ['#a3342a', '#fce4e0'], ['#7a6a00', '#fbf3c8']];
+  let lastChoose = -Infinity;
+
+  /** The chip by the greeting: the playing child's picture and name. Tapping it asks "Who's playing?" again. */
+  function whoChip() {
+    if (!manyKids()) return null;
+    const name = nameOf(state);
+    return el('button', { type: 'button', class: 'who-chip', id: 'who-chip', 'aria-label': `${name} is playing. Change who's playing`,
+      onclick: () => {
+        if (performance.now() - lastChoose < 400) return; // the tap that chose must not reopen the chooser
+        choosing = true;
+        focusAfterRender = 'who-' + activeChildId;
+        render();
+        window.scrollTo(0, 0);
+      } },
+    el('span', { class: 'who-chip-avatar', 'aria-hidden': 'true' }, state.settings.avatar),
+    el('span', { class: 'who-chip-name' }, name));
+  }
+
+  /** The greeting with the chip beside it; with one child, just the greeting (exactly as before). */
+  const withChip = (heading) => (manyKids() ? el('div', { class: 'hello-top' }, heading, whoChip()) : heading);
+
+  function chooserView() {
+    const list = kids();
+    return el('section', { class: 'view chooser' },
+      el('div', { class: 'hello who-hello' },
+        el('div', { class: 'buddy' }, sproutSvg('wave')),
+        el('div', { class: 'hello-text' }, el('h1', { class: 'bubble who-bubble' }, "Who's playing?"))),
+      el('div', { class: 'who-grid', role: 'group', 'aria-label': "Who's playing?" }, list.map((child, i) => {
+        const [color, light] = TILE_COLORS[i % TILE_COLORS.length];
+        const name = nameOf(child);
+        return el('button', {
+          type: 'button', class: 'who-tile', id: 'who-' + child.id, 'data-child': child.id,
+          'aria-current': child.id === activeChildId ? 'true' : null, style: { '--fam': color, '--fam-light': light },
+          onclick: () => {
+            if (!choosing) return; // a double tap: the first one already chose
+            lastChoose = performance.now();
+            lastDialogClose = lastChoose; // a fast second tap must not open a family card now under the finger
+            choosing = false;
+            activeChildId = child.id;
+            state = PB.getChild(family, child.id);
+            remember(child.id);
+            if (child.settings.childName) speak(child.settings.childName); // speak() follows this child's Sounds & voice
+            announce.textContent = `${name} is playing`;
+            focusAfterRender = 'who-chip';
+            if (location.hash === '#garden') location.hash = '#today'; // hashchange renders Today
+            else render();
+            window.scrollTo(0, 0);
+          },
+        },
+        el('span', { class: 'who-avatar', 'aria-hidden': 'true' }, child.settings.avatar),
+        el('span', { class: 'who-name' }, name));
+      })));
   }
 
   // ---------- Grown-ups (placeholder until Task 5 registers the real view) ----------
@@ -484,10 +587,16 @@
       banner.hidden = true;
     }
     const view = currentView();
+    const asking = choosing && view !== 'grownups' && manyKids();
     renderedDate = today();
-    app.toggleAttribute('data-animate', view !== renderedView);
-    renderedView = view;
-    app.replaceChildren((views[view] || builders[view])());
+    app.toggleAttribute('data-animate', (asking ? 'who' : view) !== renderedView);
+    renderedView = asking ? 'who' : view;
+    app.replaceChildren(asking ? chooserView() : (views[view] || builders[view])());
+    if (focusAfterRender) {
+      const target = document.getElementById(focusAfterRender);
+      focusAfterRender = null;
+      if (target) target.focus({ preventScroll: true });
+    }
     if (gardenTab) {
       gardenTab.replaceChildren(el('span', { class: 'tab-icon', 'aria-hidden': 'true' }, isFlower() ? '🌷' : reward().emoji),
         isFlower() ? ' My Garden' : ' My Rewards');
@@ -515,6 +624,11 @@
   window.PBApp = {
     getState: () => state,
     commit,
+    getFamily: () => family,
+    commitFamily,
+    activeChildId: () => activeChildId,
+    setActiveChild,
+    nameOf,
     render,
     el,
     FEELING_TEXT,

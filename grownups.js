@@ -24,13 +24,17 @@
   let rangeDays = 7;
   let fixOffset = 0;           // 0 = today, 1 = yesterday, ... 6
   let editing = null;          // "familyId/activityId" of the button being edited
+  let editingKid = null;       // id of the child whose name/picture is being edited
   let backupNote = null;       // { kind: 'ok' | 'error', text }
   let nextFocus = null;        // ids to try focusing after the next render
   let holdTimer = null;
   const openDetails = new Set();
   const drafts = {};           // input id -> typed text, so a re-render never loses typing
 
-  const S = () => window.PBApp.getState();
+  const S = () => window.PBApp.getState(); // the child shown now (switch with the chips at the top)
+  const F = () => window.PBApp.getFamily();
+  const kids = () => PB.activeChildren(F());
+  const kidName = (child) => window.PBApp.nameOf(child);
   const today = () => PB.dateKey(new Date());
   const famStyle = (f) => ({ '--fam': f.color, '--fam-light': f.light });
   const announce = (text) => { const live = document.getElementById('announce'); if (live) live.textContent = text; };
@@ -187,6 +191,28 @@
       }, el('span', { class: 'gu-tab-icon', 'aria-hidden': 'true' }, t.icon), el('span', { class: 'gu-tab-label' }, t.label))));
   }
 
+  /** Which child every sub-tab shows. Only when there are 2+ children. */
+  function childSwitcher() {
+    const list = kids();
+    if (list.length < 2) return null;
+    const activeId = window.PBApp.activeChildId();
+    const pick = (child) => {
+      if (child.id === activeId) return;
+      editing = null;
+      editingKid = null;
+      for (const id of Object.keys(drafts)) delete drafts[id]; // typing belongs to the child it was typed for
+      nextFocus = ['gu-kid-' + child.id];
+      announce(`Showing ${kidName(child)}`);
+      window.PBApp.setActiveChild(child.id);
+    };
+    return el('div', { class: 'gu-kids', role: 'group', 'aria-label': 'Showing child' },
+      el('span', { class: 'gu-kids-label', 'aria-hidden': 'true' }, 'Showing'),
+      list.map((child) => el('button', { type: 'button', class: 'gu-kid', id: 'gu-kid-' + child.id, 'aria-pressed': String(child.id === activeId),
+        onclick: () => pick(child) },
+      el('span', { class: 'gu-kid-avatar', 'aria-hidden': 'true' }, child.settings.avatar),
+      el('span', { class: 'gu-kid-name' }, kidName(child)))));
+  }
+
   function cornerView() {
     const state = S();
     const current = TABS.find((t) => t.id === tab) || TABS[0];
@@ -196,6 +222,7 @@
           el('h1', null, 'Grown-up corner'),
           el('p', { class: 'gu-sub' }, state.settings.childName ? `How ${state.settings.childName} is doing, and what ${state.settings.childName} can pick` : 'Patterns, ideas and settings')),
         el('button', { type: 'button', class: 'gu-lock', id: 'gu-lock', onclick: lock }, 'Lock 🔒')),
+      childSwitcher(),
       tabBar(),
       el('div', { class: 'gu-panel', id: 'gu-panel', role: 'tabpanel', 'aria-labelledby': 'gu-tab-' + current.id, 'data-tab': current.id },
         current.build(state)));
@@ -462,11 +489,106 @@
           el('button', { type: 'submit', class: 'primary' }, 'Add'))));
   }
 
+  /** Radio tiles for a child's picture. Selection is shown without a re-render so typing elsewhere is never lost. */
+  function avatarPicker(group, chosen, label) {
+    return el('fieldset', { class: 'avatar-pick' },
+      el('legend', null, label),
+      PB.AVATARS.map((emoji, i) => el('label', { class: 'avatar-tile' + (emoji === chosen ? ' selected' : '') },
+        el('input', { type: 'radio', class: 'visually-hidden', name: group, id: `${group}-${i}`, value: emoji, checked: emoji === chosen,
+          'aria-label': emoji,
+          onchange: (e) => {
+            drafts[group] = emoji;
+            for (const tile of e.target.closest('fieldset').querySelectorAll('.avatar-tile')) tile.classList.toggle('selected', tile.contains(e.target));
+          } }),
+        el('span', { 'aria-hidden': 'true' }, emoji))));
+  }
+  const chosenAvatar = (form, group) => { const on = form.querySelector(`input[name="${group}"]:checked`); return on ? on.value : ''; };
+
+  function kidRow(child, list) {
+    const name = kidName(child);
+    const editBtn = 'gu-kid-edit-' + child.id;
+    const last = list.length <= 1;
+    if (editingKid === child.id) {
+      const close = () => { editingKid = null; clearDrafts('gu-kid-name', 'gu-kid-av'); };
+      const cancel = () => { close(); rerender([editBtn]); };
+      return el('li', { class: 'kid-row editing', 'data-child': child.id },
+        el('form', {
+          class: 'kid-form', 'aria-label': `Edit ${name}`,
+          onkeydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } },
+          onsubmit: (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const newName = form.querySelector('#gu-kid-name').value;
+            const avatar = chosenAvatar(form, 'gu-kid-av');
+            close();
+            nextFocus = [editBtn];
+            announce(`Saved ${newName.trim()}`);
+            window.PBApp.commitFamily(PB.updateChild(F(), child.id, (c) => PB.setAvatar(PB.setChildName(c, newName), avatar)));
+          },
+        },
+        el('label', { class: 'mini-field grow' }, el('span', null, 'Name'),
+          draftInput('gu-kid-name', child.settings.childName, { maxlength: 30, required: true, pattern: '.*\\S.*', autocomplete: 'off' })),
+        avatarPicker('gu-kid-av', drafts['gu-kid-av'] || child.settings.avatar, 'Picture'),
+        el('span', { class: 'btn-actions' },
+          el('button', { type: 'submit', class: 'primary' }, 'Save'),
+          el('button', { type: 'button', onclick: cancel }, 'Cancel'))));
+    }
+    const remove = () => {
+      if (last || !window.confirm(`Remove ${name}? Their picks are kept in backups but hidden here.`)) return;
+      const i = list.indexOf(child);
+      const near = [list[i + 1], list[i - 1]].filter(Boolean).map((c) => 'gu-kid-edit-' + c.id);
+      nextFocus = [...near, 'gu-kid-add-name'];
+      announce(`Removed ${name}`);
+      window.PBApp.commitFamily(PB.removeChild(F(), child.id));
+    };
+    return el('li', { class: 'kid-row', 'data-child': child.id },
+      el('span', { class: 'kid-avatar', 'aria-hidden': 'true' }, child.settings.avatar),
+      el('span', { class: 'kid-name' }, el('span', null, name),
+        list.length > 1 && child.id === window.PBApp.activeChildId() ? tag('shown now') : null),
+      el('span', { class: 'btn-actions' },
+        el('button', { type: 'button', id: editBtn, 'aria-label': `Edit ${name}`,
+          onclick: () => { editingKid = child.id; clearDrafts('gu-kid-name', 'gu-kid-av'); rerender(['gu-kid-name']); } }, 'Edit'),
+        el('button', { type: 'button', class: 'danger', id: 'gu-kid-rm-' + child.id, disabled: last,
+          'aria-label': last ? `Remove ${name} (not possible: there must be at least one child)` : `Remove ${name}`, onclick: remove }, 'Remove')));
+  }
+
+  /** Family-wide: every child on this device. The rest of Settings is for the child shown now. */
+  function childrenCard() {
+    const list = kids();
+    const used = new Set(list.map((c) => c.settings.avatar));
+    const fresh = PB.AVATARS.find((a) => !used.has(a)) || PB.AVATARS[0];
+    const add = (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const name = form.querySelector('#gu-kid-add-name').value;
+      const avatar = chosenAvatar(form, 'gu-kid-add-av');
+      clearDrafts('gu-kid-add-name', 'gu-kid-add-av');
+      nextFocus = ['gu-kid-add-name'];
+      announce(`Added ${name.trim()}. Choose them with the buttons at the top to set up their settings.`);
+      window.PBApp.commitFamily(PB.addChild(F(), name, avatar));
+    };
+    return card('Children',
+      hint('Each child has their own picks, rewards and settings on this device.'),
+      el('ul', { class: 'kid-rows' }, list.map((c) => kidRow(c, list))),
+      list.length <= 1 ? hint('There must always be at least one child, so the only one can’t be removed.', { class: 'gu-hint kid-last' }) : null,
+      el('form', { class: 'add-form kid-add', onsubmit: add, 'aria-label': 'Add a child' },
+        el('h3', null, 'Add a child'),
+        el('label', { class: 'mini-field' }, el('span', null, 'Name'),
+          draftInput('gu-kid-add-name', '', { maxlength: 30, required: true, pattern: '.*\\S.*', placeholder: 'e.g. Mia', autocomplete: 'off' })),
+        avatarPicker('gu-kid-add-av', drafts['gu-kid-add-av'] || fresh, 'Picture'),
+        el('button', { type: 'submit', class: 'primary', id: 'gu-kid-add' }, 'Add child')));
+  }
+
   function settingsTab(state) {
     const all = PB.familiesWithSettings(PB.FAMILIES, state);
     const current = PB.rewardOf(state);
     const who = state.settings.childName || 'the child';
     return el('div', { class: 'gu-stack' },
+      childrenCard(),
+      kids().length > 1
+        ? el('p', { class: 'gu-for', id: 'gu-for' }, 'These settings are for ',
+          el('span', { class: 'gu-for-who' }, el('span', { 'aria-hidden': 'true' }, state.settings.avatar + ' '), kidName(state)), '.')
+        : null,
       el('div', { class: 'gu-two' },
         card('Child',
           el('form', { class: 'gu-field', onsubmit: (e) => { e.preventDefault(); saveName(e.currentTarget.querySelector('#gu-name').value); } },
@@ -501,7 +623,7 @@
 
   // ---------- Backup ----------
   function download() {
-    const blob = new Blob([PB.exportBackup(S())], { type: 'application/json' });
+    const blob = new Blob([PB.exportFamilyBackup(F())], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = el('a', { href: url, download: `pick-and-bloom-backup-${today()}.json`, hidden: true });
     document.body.append(link);
@@ -527,7 +649,7 @@
     let text;
     try { text = await readText(file); } catch (e) { text = null; }
     if (!unlocked || location.hash !== '#grownups') return; // left the corner while the file was read
-    const result = text === null ? { ok: false, error: "That file couldn't be read." } : PB.importBackup(text);
+    const result = text === null ? { ok: false, error: "That file couldn't be read." } : PB.importFamilyBackup(text);
     if (!result.ok) {
       backupNote = { kind: 'error', where: 'restore', text: result.error };
       rerender(['gu-restore']);
@@ -540,7 +662,7 @@
     }
     backupNote = { kind: 'ok', where: 'restore', text: 'Backup restored ✓' };
     nextFocus = ['gu-restore'];
-    apply(PB.mergeStates(S(), result.state));
+    window.PBApp.commitFamily(PB.mergeFamilies(F(), result.family));
   }
 
   function backupTab() {
@@ -549,7 +671,7 @@
       : null);
     return el('div', { class: 'gu-stack gu-two' },
       card('Download a backup',
-        hint('Saves every pick and setting on this device to a file. Keep it somewhere safe.'),
+        hint('Saves every child’s picks and settings on this device to one file. Keep it somewhere safe.'),
         el('button', { type: 'button', class: 'primary', id: 'gu-download', onclick: download }, '⬇️ Download backup'),
         note('download')),
       card('Restore from a backup',
@@ -592,6 +714,7 @@
     if (location.hash === '#grownups') return;
     unlocked = false;
     editing = null;
+    editingKid = null;
     backupNote = null;
     cancelHold();
   });

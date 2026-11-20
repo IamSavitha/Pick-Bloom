@@ -144,6 +144,62 @@ button.secondary { border-color: #d6cbb8; background: var(--card); color: var(--
   border-radius: 0 0 0 5px;
 }
 
+/* ---------- several children: the chip by the greeting, and "Who's playing?" ---------- */
+.hello-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.hello-top h1 { min-width: 0; }
+.who-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 64px;
+  padding: 6px 18px 6px 6px;
+  border: 3px solid #bfe3a4;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 19px;
+  box-shadow: var(--shadow);
+}
+.who-chip-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; background: #eef8e8; font-size: 30px; line-height: 1; }
+.who-chip-name { min-width: 0; overflow-wrap: anywhere; }
+.who-hello { margin-bottom: 20px; }
+.bubble.who-bubble { margin: 0; font-size: clamp(26px, 7vw, 40px); font-weight: 700; color: #2f5a1f; }
+.who-bubble::before { top: 50%; margin-top: -9px; }
+.who-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 136px), 1fr));
+  gap: 14px;
+  max-width: 760px;
+}
+@media (min-width: 600px) {
+  .chooser { display: flex; flex-direction: column; align-items: center; }
+  .who-hello { justify-content: center; margin-bottom: 28px; }
+  .who-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; width: 100%; max-width: 900px; }
+  .who-grid .who-tile { flex: 0 1 200px; min-height: 210px; font-size: 26px; }
+  .who-grid .who-avatar { font-size: 96px; }
+}
+.who-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 168px;
+  padding: 16px 8px;
+  background: var(--fam-light);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: var(--shadow), 0 5px 0 var(--fam);
+  margin-bottom: 5px;
+}
+.who-tile:active:not(:disabled) { transform: scale(0.95) translateY(3px); box-shadow: var(--shadow), 0 2px 0 var(--fam); }
+.who-tile[aria-current="true"] { box-shadow: var(--shadow), 0 5px 0 var(--fam), 0 0 0 4px #fff, 0 0 0 7px var(--fam); }
+.who-avatar { font-size: 72px; line-height: 1; }
+.who-name { max-width: 100%; overflow-wrap: anywhere; }
+
 .sprout-wave-arm { transform-box: fill-box; transform-origin: 0% 100%; }
 @media (prefers-reduced-motion: no-preference) {
   [data-animate] .sprout-wave-arm { animation: wave 1.6s ease-in-out 0.3s 2; }
@@ -632,7 +688,7 @@ dialog:not([open]) { display: none; }
   .petal { display: none; }
   .cheer { animation: fade 1.4s linear both; }
   button { transition: none; }
-  button:active:not(:disabled), button.family-main:active, .activity:active:not(:disabled), .did-it:active { transform: none; }
+  button:active:not(:disabled), button.family-main:active, .activity:active:not(:disabled), .did-it:active, .who-tile:active:not(:disabled) { transform: none; }
 }
 @keyframes fade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
 
@@ -654,6 +710,7 @@ dialog:not([open]) { display: none; }
 .grownups button:active:not(:disabled) { transform: scale(0.97); }
 .grownups button.primary { border-color: var(--brand); background: var(--brand); color: #fff; box-shadow: none; }
 .grownups button.danger { border-color: #efc9c3; color: var(--gu-danger); }
+.grownups button:disabled { border-style: dashed; opacity: 0.5; cursor: not-allowed; }
 .grownups input[type="text"] {
   width: 100%;
   min-width: 0;
@@ -1017,3 +1074,51 @@ dialog:not([open]) { display: none; }
 .gu-note { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; font-size: 15px; font-weight: 600; }
 .gu-note.ok { background: #eef8e8; color: #1f5a33; }
 .gu-note.error { background: #fdecea; color: var(--gu-danger); }
+
+/* Children: the switcher under the header, and Settings → Children */
+.gu-kids { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; }
+.gu-kids-label { font-size: 15px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+.grownups button.gu-kid {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 48px;
+  padding: 4px 16px 4px 5px;
+  border-radius: 999px;
+  font-size: 16px;
+}
+.grownups button.gu-kid[aria-pressed="true"] { border-color: var(--brand); background: #eef8e8; color: #1f5a33; font-weight: 700; box-shadow: inset 0 0 0 1px var(--brand); }
+.gu-kid-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; background: var(--gu-soft); font-size: 22px; line-height: 1; }
+.gu-kid[aria-pressed="true"] .gu-kid-avatar { background: #fff; }
+.gu-kid-name { min-width: 0; overflow-wrap: anywhere; }
+.kid-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.kid-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 0; border-bottom: 1px solid var(--gu-soft); }
+.kid-row:last-child { border-bottom: 0; }
+.kid-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; border-radius: 50%; background: var(--gu-soft); font-size: 30px; line-height: 1; }
+.kid-name { flex: 1 1 100px; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.kid-row.editing { padding: 12px; margin: 4px 0; border: 2px solid var(--brand); border-radius: 14px; background: #f5fbf1; }
+.kid-form { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.kid-form .btn-actions { margin-left: 0; }
+.kid-last { margin: 8px 0 0; }
+.kid-add { display: flex; flex-direction: column; gap: 12px; }
+.kid-add h3 { margin: 0; }
+.kid-add .mini-field, .kid-form .mini-field { max-width: 420px; }
+.grownups .kid-add button.primary { align-self: flex-start; min-width: 160px; }
+.avatar-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.avatar-pick legend { padding: 0; margin-bottom: 4px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.avatar-tile {
+  display: grid;
+  place-items: center;
+  min-height: 52px;
+  border: 2px solid var(--gu-line);
+  border-radius: 14px;
+  background: #fffdf9;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.avatar-tile.selected { border-color: var(--brand); background: #eef8e8; box-shadow: inset 0 0 0 1px var(--brand); }
+.avatar-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; }
+.gu-for { margin: 4px 0 -2px; padding: 10px 14px; border-radius: 14px; background: #eef8e8; color: #1f5a33; font-weight: 600; overflow-wrap: anywhere; }
+.gu-for-who { font-weight: 700; }
