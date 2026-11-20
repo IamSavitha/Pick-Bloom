@@ -517,6 +517,7 @@
     commit,
     render,
     el,
+    FEELING_TEXT,
     setAfterCommit(fn) { afterCommit = fn; },
     registerView(name, fn) {
       views[name] = fn;
