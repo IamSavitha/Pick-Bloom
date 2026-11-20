@@ -46,6 +46,24 @@ Alternatives considered:
   - **This week:** the last 7 days, row by row.
   - **Grows only:** there are no streaks to break and no "you missed it" messages.
 
+## Look and feel (toddler, amended 2026-11-19)
+
+The user is a toddler boy who can't read yet, so pictures, sounds and celebration carry the meaning, and the words are for the grown-up reading along.
+
+- **Rounded and friendly:**
+  - The "Fredoka" font (Google Fonts), falling back to the system rounded font.
+  - Chunky rounded tiles in the family colors, with soft shadows.
+  - Large emoji: about 56px on buttons and in picks.
+- **Sprout, the buddy:** a small, round, original baby dinosaur drawn as inline SVG, green, with a leaf sprout on his head. He waves on Today and cheers during celebrations.
+- **Celebration on "I did it!":**
+  - A short burst of petals over the screen.
+  - Sprout cheering.
+  - A soft chime made by the browser (Web Audio). No sound files.
+  - The chime follows the same grown-up setting as read-aloud ("Sounds & voice").
+- **Garden scene:** a sky gradient, sun and grass strip, with flowers that pop up.
+- **Tap feedback:** tiles squish slightly when pressed.
+- **Reduced motion:** every animation is turned off under `prefers-reduced-motion`.
+
 ## The grown-up side (behind "hold for 3 seconds")
 
 - **Patterns** (last 7 or 30 days)
