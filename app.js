@@ -155,7 +155,10 @@
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       audio = audio || new AudioCtx();
-      if (audio.state !== 'running') audio.resume(); // iOS reports 'interrupted' after a lock or background
+      if (audio.state !== 'running') { // iOS reports 'interrupted' after a lock or background
+        const resumed = audio.resume();
+        if (resumed && typeof resumed.catch === 'function') resumed.catch(() => {});
+      }
       const start = audio.currentTime + 0.9; // after the spoken "Yay!" has started, so they don't overlap
       [523.25, 659.25, 783.99].forEach((freq, i) => {
         const osc = audio.createOscillator();
@@ -335,7 +338,7 @@
           if (state !== before) {
             chime();
             speak('Yay! ' + FEELING_TEXT[feeling].text);
-            announce.textContent = `${capitalize(reward().one)} earned: ${activity.label}`;
+            announce.textContent = `${capitalize(reward().one)} earned: ${activity.label}, ${family.name}`;
             celebrate();
             if (row) row.classList.add('bloom');
           }
@@ -485,8 +488,10 @@
     app.toggleAttribute('data-animate', view !== renderedView);
     renderedView = view;
     app.replaceChildren((views[view] || builders[view])());
-    gardenTab.replaceChildren(el('span', { class: 'tab-icon', 'aria-hidden': 'true' }, isFlower() ? '🌷' : reward().emoji),
-      isFlower() ? ' My Garden' : ' My Rewards');
+    if (gardenTab) {
+      gardenTab.replaceChildren(el('span', { class: 'tab-icon', 'aria-hidden': 'true' }, isFlower() ? '🌷' : reward().emoji),
+        isFlower() ? ' My Garden' : ' My Rewards');
+    }
     for (const link of document.querySelectorAll('.tabs a')) {
       if (link.getAttribute('href') === '#' + view) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
