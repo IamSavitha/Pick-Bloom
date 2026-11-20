@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Only this site's own files, plus the sync server (forks: change the Supabase URL here and in config.js). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://qxrmjryffcyujzpyqcfu.supabase.co">
   <title>Pick&amp;Bloom</title>
   <meta name="theme-color" content="#2a7a46">
   <link rel="manifest" href="manifest.webmanifest">

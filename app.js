@@ -108,6 +108,11 @@
   let storage = null;
   try { storage = window.localStorage; } catch (e) { /* storage blocked */ }
   let { family, persistent, recovered } = PB.loadFamily(storage);
+  // Ask the browser not to clear saved progress when space runs low (it may say no; that's fine).
+  try {
+    const asked = navigator.storage && navigator.storage.persist && navigator.storage.persist();
+    if (asked && typeof asked.catch === 'function') asked.catch(() => {});
+  } catch (e) { /* not supported */ }
   const ACTIVE_KEY = 'pickbloom.activeChild'; // which child is playing, remembered per device only
   let activeChildId = PB.chooseActiveChild(family, readRemembered());
   let state = PB.getChild(family, activeChildId);

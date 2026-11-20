@@ -48,6 +48,8 @@ Once it's on the home screen it opens full screen, like a regular app.
 
 You can also download this folder and double-click `index.html`. It works straight from your computer.
 
+**Keep it on the Home Screen on iPhone and iPad.** Safari may clear a website's saved data if the site isn't opened for about 7 days, unless it has been added to the Home Screen. So add it to the Home Screen, and either turn on Sync or download a Backup now and then.
+
 ---
 
 ## Privacy
@@ -58,6 +60,7 @@ You can also download this folder and double-click `index.html`. It works straig
 - **Each login sees only its own data.** The database only lets a signed-in account read and write its own family. Nobody can create an account from the app: logins are made by the app's owner.
 - **Signing out** stops syncing on that device. Everything already saved on the device stays there.
 - **A different login on the same device never mixes families.** If someone else signs in on your device, their own children are shown, and your children are kept safely on the device (never sent to their account). They come back when your login signs in there again.
+- **The app can only talk to its own site and your sync server.** A browser rule in `index.html` (a "Content Security Policy") blocks everything else.
 
 ---
 
@@ -103,6 +106,8 @@ You only need this if you want your own copy of the app, with your own sync serv
    ```
 
    These two values are meant to be public. The database rules and the "no sign-ups" setting are what keep the data private. If you leave them blank, the app saves on each device only and the Sync tab explains that.
+
+   Also change the Supabase address in the `Content-Security-Policy` line near the top of [`index.html`](index.html) (the part after `connect-src 'self'`). That line is the app's list of places it's allowed to talk to, so without your address there, sync can't reach your project.
 7. **Publish it with GitHub Pages:** in your fork, go to **Settings → Pages**, choose **Deploy from a branch**, pick the **`main`** branch and the **`/ (root)`** folder, and click **Save**. The `.nojekyll` file is already there, so GitHub serves the files exactly as they are. After a minute your copy is live at `https://YOUR-NAME.github.io/Pick-Bloom/`.
 
 ---
