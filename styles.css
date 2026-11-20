@@ -711,7 +711,7 @@ dialog:not([open]) { display: none; }
 .grownups button.primary { border-color: var(--brand); background: var(--brand); color: #fff; box-shadow: none; }
 .grownups button.danger { border-color: #efc9c3; color: var(--gu-danger); }
 .grownups button:disabled { border-style: dashed; opacity: 0.5; cursor: not-allowed; }
-.grownups input[type="text"] {
+.grownups input[type="text"], .grownups input[type="email"], .grownups input[type="password"] {
   width: 100%;
   min-width: 0;
   min-height: 44px;
@@ -800,6 +800,8 @@ dialog:not([open]) { display: none; }
 .gu-tab-icon { font-size: 20px; line-height: 1; }
 .gu-tab-label { max-width: 100%; overflow-wrap: anywhere; }
 .grownups .gu-tabs button[aria-selected="true"] { background: var(--card); color: var(--ink); font-weight: 700; box-shadow: 0 1px 4px rgba(80, 55, 20, 0.14); }
+/* Six sub-tabs don't fit one row on the narrowest phones without breaking words: use two rows of three. */
+@media (max-width: 379px) { .gu-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 600px) {
   .grownups .gu-tabs button { flex-direction: row; justify-content: center; gap: 8px; min-height: 48px; padding: 6px 10px; font-size: 16px; }
   .gu-tab-icon { font-size: 18px; }
@@ -1126,3 +1128,16 @@ dialog:not([open]) { display: none; }
 @supports not selector(:has(*)) { .avatar-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; } }
 .gu-for { margin: 4px 0 -2px; padding: 10px 14px; border-radius: 14px; background: #eef8e8; color: #1f5a33; font-weight: 600; overflow-wrap: anywhere; }
 .gu-for-who { font-weight: 700; }
+
+/* Sync */
+.sync-lead { margin: 0 0 14px; font-size: 17px; line-height: 1.45; }
+.sync-form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+.sync-form .gu-note { margin: 0; }
+.grownups .sync-form button.primary { align-self: flex-start; min-width: 160px; }
+.sync-foot { margin: 14px 0 0; }
+.sync-who { margin: 0 0 8px; font-size: 17px; overflow-wrap: anywhere; }
+.sync-status { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--gu-soft); font-weight: 600; }
+.sync-status.is-synced { background: #eef8e8; color: #1f5a33; }
+.sync-status.is-error { background: #fdecea; color: var(--gu-danger); }
+.sync-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.grownups .sync-actions button { min-width: 140px; }

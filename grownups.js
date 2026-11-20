@@ -1,4 +1,4 @@
-/* Pick&Bloom grown-up corner: a hold-to-open gate, then Patterns, Ideas, Fix picks, Settings and Backup. */
+/* Pick&Bloom grown-up corner: a hold-to-open gate, then Patterns, Ideas, Fix picks, Settings, Backup and Sync. */
 (function () {
   'use strict';
 
@@ -9,7 +9,7 @@
   const MAX_LOVED = 8;
   const params = new URLSearchParams(location.search);
 
-  // Sub-tabs, in order. Adding one (e.g. Sync) is one more line here.
+  // Sub-tabs, in order. Adding one is one more line here.
   // Each builder takes the child's state and returns its panel; actions read the latest state via PBApp.
   const TABS = [
     { id: 'patterns', icon: '📊', label: 'Patterns', build: patternsTab },
@@ -17,6 +17,7 @@
     { id: 'fix', icon: '🧹', label: 'Fix picks', build: fixTab },
     { id: 'settings', icon: '⚙️', label: 'Settings', build: settingsTab },
     { id: 'backup', icon: '💾', label: 'Backup', build: backupTab },
+    { id: 'sync', icon: '🔄', label: 'Sync', build: syncTab },
   ];
   const IDEA_ICONS = { 'getting-started': '🌱', skipped: '🧭', repeat: '🔁', dropped: '🤝', loved: '💖', 'all-good': '🌈' };
 
@@ -28,6 +29,9 @@
   let editing = null;          // "familyId/activityId" of the button being edited
   let editingKid = null;       // id of the child whose name/picture is being edited
   let backupNote = null;       // { kind: 'ok' | 'error', text }
+  let signingIn = false;       // a sign-in is on its way to the server
+  let signingOut = false;
+  let signInError = null;      // the server's reason, shown under the form
   let nextFocus = null;        // ids to try focusing after the next render
   let holdTimer = null;
   const openDetails = new Set();
@@ -194,6 +198,7 @@
     editing = null;
     editingKid = null;
     backupNote = null;
+    signInError = null;
     clearAllDrafts();
     if (location.hash === '#grownups') window.PBApp.render();
   }
@@ -734,6 +739,93 @@
         note('restore')));
   }
 
+  // ---------- Sync ----------
+  function syncStatusText(status) {
+    if (!status || status.kind === 'signed-out') return 'Waiting to sync…';
+    if (status.kind === 'syncing') return 'Syncing…';
+    if (status.kind === 'synced') return `Last synced at ${status.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    return `Couldn't sync: ${status.message}. Progress is still saved on this device.`;
+  }
+
+  async function signIn(e) {
+    e.preventDefault();
+    if (signingIn) return;
+    const form = e.currentTarget;
+    const email = form.querySelector('#gu-sync-email').value.trim();
+    const password = form.querySelector('#gu-sync-password').value;
+    signingIn = true;
+    signInError = null;
+    rerender(['gu-sync-signin']);
+    const result = await window.PBApp.sync.signIn(email, password);
+    signingIn = false;
+    if (result.ok) {
+      clearDrafts('gu-sync-email');
+      announce('Signed in. Syncing now.');
+      nextFocus = ['gu-sync-now'];
+    } else {
+      signInError = result.error;
+      nextFocus = ['gu-sync-password'];
+    }
+    if (location.hash === '#grownups') window.PBApp.render();
+  }
+
+  async function signOut() {
+    if (signingOut) return;
+    signingOut = true;
+    rerender(['gu-sync-signout']);
+    await window.PBApp.sync.signOut();
+    signingOut = false;
+    announce('Signed out. Progress stays on this device.');
+    nextFocus = ['gu-sync-email'];
+    if (location.hash === '#grownups') window.PBApp.render();
+  }
+
+  function syncTab() {
+    const app = window.PBApp;
+    const backupTip = hint('Until then, use Backup to copy progress between devices.');
+    if (app.syncMode === 'off') {
+      return el('div', { class: 'gu-stack' }, card('Sync across devices',
+        el('p', { class: 'sync-lead' }, "Right now Pick&Bloom saves on this device only. To see the same garden on the iPad, phone and laptop, set up free sync. It takes about 10 minutes. See 'Sync across devices' in the README."),
+        backupTip));
+    }
+    if (app.syncMode !== 'on') {
+      return el('div', { class: 'gu-stack' }, card('Sync across devices',
+        el('p', { class: 'sync-lead' }, "Sync couldn't start on this device just now, so Pick&Bloom is saving on this device only. Everything else works as usual. Try again later by reloading the page."),
+        backupTip));
+    }
+    const sync = app.sync;
+    const status = app.syncStatus();
+    if (sync.isSignedIn()) {
+      const kind = status ? status.kind : 'waiting';
+      return el('div', { class: 'gu-stack' }, card('Sync across devices',
+        el('p', { class: 'sync-who' }, 'Signed in as ', el('strong', null, sync.email() || 'your account')),
+        el('p', { class: 'sync-status is-' + kind, id: 'gu-sync-status', role: 'status' }, syncStatusText(status)),
+        hint("Every child's picks and settings sync together, about once a minute and soon after each change."),
+        el('div', { class: 'sync-actions' },
+          el('button', { type: 'button', class: 'primary', id: 'gu-sync-now', disabled: kind === 'syncing' || signingOut,
+            onclick: () => { announce('Syncing'); app.sync.syncNow(); } }, '🔄 Sync now'),
+          el('button', { type: 'button', id: 'gu-sync-signout', disabled: signingOut, onclick: signOut }, signingOut ? 'Signing out…' : 'Sign out')),
+        hint('Signing out only stops syncing on this device. Everything saved here stays here.', { class: 'gu-hint sync-foot' })));
+    }
+    if (!status) {
+      return el('div', { class: 'gu-stack' }, card('Sync across devices', el('p', { class: 'sync-status', role: 'status' }, 'Checking…')));
+    }
+    const email = drafts['gu-sync-email'] !== undefined ? drafts['gu-sync-email'] : '';
+    return el('div', { class: 'gu-stack' }, card('Sync across devices',
+      el('p', { class: 'sync-lead', id: 'gu-sync-lead' }, 'Use Pick&Bloom on this device only, or ask the person who shared this app to create a login for you.'),
+      el('form', { class: 'sync-form', 'aria-label': 'Sign in to sync', onsubmit: signIn },
+        el('label', { class: 'mini-field' }, el('span', null, 'Email'),
+          el('input', { type: 'email', id: 'gu-sync-email', value: email, required: true, autocomplete: 'username', inputmode: 'email',
+            autocapitalize: 'off', spellcheck: 'false', oninput: (e) => { drafts['gu-sync-email'] = e.target.value; } })),
+        el('label', { class: 'mini-field' }, el('span', null, 'Password'),
+          el('input', { type: 'password', id: 'gu-sync-password', required: true, autocomplete: 'current-password' })),
+        signInError
+          ? el('p', { class: 'gu-note error', role: 'alert', id: 'gu-sync-error' }, `Couldn't sign in: ${signInError}`)
+          : null,
+        el('button', { type: 'submit', class: 'primary', id: 'gu-sync-signin', disabled: signingIn }, signingIn ? 'Signing in…' : 'Sign in')),
+      hint('Sign in with the same grown-up account on every device. The child never needs to sign in again on that device.', { class: 'gu-hint sync-foot' })));
+  }
+
   // ---------- the view ----------
   function focusFirst(ids, selection) {
     for (const id of ids) {
@@ -768,8 +860,14 @@
     editing = null;
     editingKid = null;
     backupNote = null;
+    signInError = null;
     clearAllDrafts();
     cancelHold();
+  });
+
+  // Sync status changes (syncing → synced, signed out elsewhere) refresh the Sync tab while it is shown.
+  window.PBApp.onSyncStatus(() => {
+    if (unlocked && tab === 'sync' && location.hash === '#grownups') window.PBApp.render();
   });
 
   window.PBApp.registerView('grownups', grownupsView);

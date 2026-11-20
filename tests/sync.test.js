@@ -1,0 +1,184 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const PB = require('../store.js');
+const FAM = require('../family.js');
+const { createSync } = require('../sync.js');
+
+const T1 = new Date('2026-11-19T15:00:00.000Z');
+const T2 = new Date('2026-11-19T16:00:00.000Z');
+const DAY = '2026-11-19';
+const FIRST = FAM.FIRST_CHILD_ID;
+
+/** A family whose first child picked one activity. */
+function picked(familyId, activityId, at, family = FAM.emptyFamily()) {
+  return FAM.updateChild(family, FIRST, (c) => PB.pickActivity(c, DAY, familyId, activityId, at));
+}
+const first = (family) => FAM.getChild(family, FIRST);
+
+function fakeClient({ remote = null, signedIn = true, failSelect = false } = {}) {
+  const db = { row: remote ? { user_id: 'u1', state: remote } : null, upserts: 0, calls: 0 };
+  let session = signedIn ? { user: { id: 'u1', email: 'parent@example.com' } } : null;
+  const listeners = [];
+  return {
+    db,
+    signOuts: [],
+    expire() { session = null; listeners.forEach((fn) => fn('SIGNED_OUT', null)); },
+    auth: {
+      async getSession() { return { data: { session } }; },
+      async signInWithPassword({ email, password }) {
+        if (password !== 'right') return { data: {}, error: { message: 'Invalid login credentials' } };
+        session = { user: { id: 'u1', email } };
+        return { data: { user: session.user, session }, error: null };
+      },
+      async signOut(opts) { this.lastSignOut = opts; session = null; return { error: null }; },
+      onAuthStateChange(fn) { listeners.push(fn); return { data: { subscription: { unsubscribe() {} } } }; },
+    },
+    from(table) {
+      db.calls += 1;
+      assert.equal(table, 'pickbloom_state');
+      return {
+        select() { return { eq(col, val) { assert.equal(col, 'user_id'); assert.equal(val, 'u1'); return {
+          async maybeSingle() {
+            if (failSelect) return { data: null, error: { message: 'Failed to fetch' } };
+            return { data: db.row ? { state: db.row.state } : null, error: null };
+          } }; } }; },
+        async upsert(row) { db.upserts += 1; db.row = row; return { error: null }; },
+      };
+    },
+  };
+}
+
+function harness(client, local) {
+  let state = local;
+  const statuses = [];
+  const sync = createSync({ client, getState: () => state, setState: (s) => { state = s; }, onStatus: (s) => statuses.push(s) });
+  return { sync, statuses, get state() { return state; } };
+}
+
+test('start() with a session merges remote into local and uploads the result', async () => {
+  const remote = picked('move', 'run', T1);
+  const local = picked('calm', 'rest', T2);
+  const client = fakeClient({ remote });
+  const h = harness(client, local);
+  await h.sync.start();
+  assert.deepEqual(Object.keys(PB.entriesForDate(first(h.state), DAY)).sort(), ['calm', 'move']);
+  assert.deepEqual(client.db.row.state, h.state);
+  assert.equal(client.db.row.user_id, 'u1');
+  assert.equal(h.statuses.at(-1).kind, 'synced');
+  assert.equal(h.sync.email(), 'parent@example.com');
+});
+
+test('children added on another device arrive, and children here are uploaded', async () => {
+  const remote = FAM.addChild(FAM.emptyFamily(), 'Mia', '🦊', T1, 'child-mia');
+  const local = FAM.addChild(picked('move', 'run', T2), 'Leo', '🐻', T2, 'child-leo');
+  const client = fakeClient({ remote });
+  const h = harness(client, local);
+  await h.sync.start();
+  assert.deepEqual(FAM.activeChildren(h.state).map((c) => c.id).sort(), ['child-1', 'child-leo', 'child-mia']);
+  assert.equal(PB.entriesForDate(first(h.state), DAY).move[0].activityId, 'run');
+  assert.deepEqual(client.db.row.state, h.state);
+});
+
+test('first sync with no remote row uploads local state', async () => {
+  const local = picked('move', 'run', T1);
+  const client = fakeClient();
+  const h = harness(client, local);
+  await h.sync.start();
+  assert.deepEqual(client.db.row.state, local);
+});
+
+test('an older single-child remote row is upgraded and merged', async () => {
+  const remote = PB.pickActivity(PB.emptyState(), DAY, 'move', 'run', T1); // a v2 save, before children existed
+  const local = picked('calm', 'rest', T2);
+  const client = fakeClient({ remote });
+  const h = harness(client, local);
+  await h.sync.start();
+  assert.deepEqual(Object.keys(PB.entriesForDate(first(h.state), DAY)).sort(), ['calm', 'move']);
+  assert.equal(FAM.isValidFamily(client.db.row.state), true);
+});
+
+test('signed out: start() reports signed-out and does not touch the server', async () => {
+  const client = fakeClient({ signedIn: false });
+  const h = harness(client, FAM.emptyFamily());
+  await h.sync.start();
+  assert.equal(h.statuses.at(-1).kind, 'signed-out');
+  await h.sync.syncNow();
+  await h.sync.syncNow();
+  assert.equal(client.db.calls, 0);
+  assert.equal(client.db.upserts, 0);
+  assert.equal(h.sync.isSignedIn(), false);
+});
+
+test('signIn with a wrong password returns the error; the right one syncs', async () => {
+  const client = fakeClient({ signedIn: false });
+  const h = harness(client, FAM.emptyFamily());
+  await h.sync.start();
+  assert.deepEqual(await h.sync.signIn('parent@example.com', 'wrong'), { ok: false, error: 'Invalid login credentials' });
+  assert.equal(client.db.calls, 0);
+  assert.deepEqual(await h.sync.signIn('parent@example.com', 'right'), { ok: true });
+  assert.equal(client.db.upserts, 1);
+  await h.sync.signOut();
+  assert.equal(h.sync.isSignedIn(), false);
+  assert.equal(h.statuses.at(-1).kind, 'signed-out');
+  assert.deepEqual(client.auth.lastSignOut, { scope: 'local' }); // other devices stay signed in
+});
+
+test('a sign-in that throws (offline) is reported, not thrown', async () => {
+  const client = fakeClient({ signedIn: false });
+  client.auth.signInWithPassword = async () => { throw new Error('Failed to fetch'); };
+  const h = harness(client, FAM.emptyFamily());
+  assert.deepEqual(await h.sync.signIn('parent@example.com', 'right'), { ok: false, error: 'Failed to fetch' });
+});
+
+test('signing out keeps everything on this device', async () => {
+  const local = picked('move', 'run', T1);
+  const client = fakeClient();
+  const h = harness(client, local);
+  await h.sync.start();
+  const before = h.state;
+  await h.sync.signOut();
+  assert.equal(h.state, before);
+  assert.equal(PB.entriesForDate(first(h.state), DAY).move[0].activityId, 'run');
+});
+
+test('a session that ends on its own stops syncing', async () => {
+  const client = fakeClient();
+  const h = harness(client, FAM.emptyFamily());
+  await h.sync.start();
+  const calls = client.db.calls;
+  client.expire();
+  assert.equal(h.sync.isSignedIn(), false);
+  assert.equal(h.statuses.at(-1).kind, 'signed-out');
+  await h.sync.syncNow();
+  assert.equal(client.db.calls, calls);
+});
+
+test('network errors are reported, and local data is kept', async () => {
+  const local = picked('move', 'run', T1);
+  const client = fakeClient({ failSelect: true });
+  const h = harness(client, local);
+  await h.sync.start();
+  assert.equal(h.statuses.at(-1).kind, 'error');
+  assert.equal(h.statuses.at(-1).message, 'Failed to fetch');
+  assert.equal(h.state, local);
+  assert.equal(client.db.upserts, 0);
+});
+
+test('edits made while a sync is in flight are kept', async () => {
+  const client = fakeClient();
+  let state = FAM.emptyFamily();
+  const sync = createSync({ client, getState: () => state, setState: (s) => { state = s; }, onStatus() {} });
+  await sync.start();
+  const p = sync.syncNow();
+  state = picked('move', 'run', T2, state); // child taps during the sync
+  await p;
+  assert.equal(PB.entriesForDate(first(state), DAY).move[0].activityId, 'run');
+});
+
+test('a corrupt remote row is ignored and overwritten by valid local state', async () => {
+  const client = fakeClient({ remote: { junk: true } });
+  const local = picked('move', 'run', T1);
+  const h = harness(client, local);
+  await h.sync.start();
+  assert.deepEqual(client.db.row.state, local);
+});

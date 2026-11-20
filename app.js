@@ -149,6 +149,22 @@
     afterCommit();
   }
 
+  /** Sync brought in a newer family: take it without starting another sync. Keeps the playing child if still there. */
+  function replaceFamily(next) {
+    if (!PB.isValidFamily(next) || JSON.stringify(next) === JSON.stringify(family)) return; // nothing new: no re-render
+    const hadMany = manyKids();
+    const before = activeChildId;
+    family = next;
+    activeChildId = PB.chooseActiveChild(family, activeChildId);
+    state = PB.getChild(family, activeChildId);
+    if (activeChildId !== before) remember(activeChildId);
+    // A child added (or the playing child removed) on another device: ask "Who's playing?" again.
+    if (!manyKids()) choosing = false;
+    else if (!hadMany || activeChildId !== before) choosing = true;
+    saveFamily();
+    render();
+  }
+
   function setActiveChild(id) {
     const child = PB.getChild(family, id);
     if (!child || child.removed) return;
@@ -621,6 +637,47 @@
   window.addEventListener('focus', renderIfNewDay);
   setInterval(renderIfNewDay, 60000);
 
+  // ---------- sync across devices (optional) ----------
+  // Only ever talks to the server when a grown-up is signed in on this device. Without config.js values,
+  // or if vendor/supabase.min.js didn't load, everything stays on this device and nothing else changes.
+  let syncStatus = null; // null until the saved login is checked; then { kind: 'signed-out' | 'syncing' | 'synced' | 'error' }
+  let syncListener = function () {};
+  let syncMode = 'off';  // 'off' (not set up), 'unavailable' (set up, but the library didn't load) or 'on'
+  let sync = null;
+  try {
+    const config = window.PB_CONFIG || {};
+    if (config.supabaseUrl && config.supabaseAnonKey) {
+      syncMode = 'unavailable';
+      if (window.supabase && typeof window.supabase.createClient === 'function' && typeof PB.createSync === 'function') {
+        // Creating the client only reads a saved login from this device; it sends nothing when nobody is signed in.
+        const client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey,
+          { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+        sync = PB.createSync({
+          client,
+          getState: () => family,
+          setState: replaceFamily,
+          onStatus: (st) => {
+            syncStatus = st;
+            try { syncListener(st); } catch (e) { /* the grown-up corner's display only */ }
+          },
+        });
+        syncMode = 'on';
+      }
+    }
+  } catch (e) { sync = null; }
+
+  /** Never throws and never rejects: sync must not break the child's screens. */
+  function syncQuietly() {
+    try { if (sync) sync.syncNow().catch(() => {}); } catch (e) { /* see the Sync tab for errors */ }
+  }
+  let syncTimer = null;
+  if (sync) {
+    afterCommit = () => { clearTimeout(syncTimer); syncTimer = setTimeout(syncQuietly, 1500); };
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncQuietly(); });
+    window.addEventListener('online', syncQuietly);
+    setInterval(() => { if (document.visibilityState === 'visible') syncQuietly(); }, 60000);
+  }
+
   window.PBApp = {
     getState: () => state,
     commit,
@@ -633,6 +690,10 @@
     el,
     FEELING_TEXT,
     setAfterCommit(fn) { afterCommit = fn; },
+    sync,
+    syncMode,
+    syncStatus: () => syncStatus,
+    onSyncStatus(fn) { syncListener = fn; },
     registerView(name, fn) {
       views[name] = fn;
       if (currentView() === name) render();
@@ -640,4 +701,7 @@
   };
 
   render();
+  if (sync) {
+    try { sync.start().catch(() => {}); } catch (e) { /* stays on this device */ }
+  }
 })();
