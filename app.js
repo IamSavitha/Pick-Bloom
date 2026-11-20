@@ -47,6 +47,61 @@
     return svg;
   }
 
+  /**
+   * Sprout, the buddy: a round baby dinosaur with a leaf on his head (original drawing, no innerHTML).
+   * mood 'wave' raises one arm; 'cheer' raises both and opens his smile.
+   */
+  function sproutSvg(mood) {
+    const LINE = '#2f6b2a';
+    const BODY = '#7cc95a';
+    const svg = svgEl('svg', { viewBox: '0 0 120 124', class: 'sprout-svg sprout-' + mood, 'aria-hidden': 'true', focusable: 'false' });
+    const add = (tag, attrs) => { const n = svgEl(tag, attrs); svg.append(n); return n; };
+    const outlined = { stroke: LINE, 'stroke-width': 3.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' };
+    // back spikes and tail sit behind the body
+    for (const [x, y, r] of [[36, 30, -50], [28, 46, -68], [26, 64, -84], [30, 82, -100]]) {
+      add('path', { d: 'M-8 6 Q0 -16 8 6 Z', fill: '#ffc94a', ...outlined, transform: `translate(${x} ${y}) rotate(${r})` });
+    }
+    add('path', { d: 'M34 96 Q10 104 8 84 Q20 92 36 86 Z', fill: BODY, ...outlined });
+    // arms (behind the body): wave raises the right arm, cheer raises both
+    const arm = (from, to, cls) => {
+      const d = `M${from[0]} ${from[1]} L${to[0]} ${to[1]}`;
+      const g = svgEl('g', cls ? { class: cls } : {});
+      g.append(svgEl('path', { d, stroke: LINE, 'stroke-width': 17, 'stroke-linecap': 'round', fill: 'none' }));
+      g.append(svgEl('path', { d, stroke: BODY, 'stroke-width': 10, 'stroke-linecap': 'round', fill: 'none' }));
+      svg.append(g);
+    };
+    if (mood === 'cheer') arm([38, 74], [17, 50]); else arm([38, 80], [27, 98]);
+    if (mood === 'cheer' || mood === 'wave') arm([82, 74], [103, 50], mood === 'wave' ? 'sprout-wave-arm' : ''); else arm([82, 80], [93, 98]);
+    // feet
+    add('ellipse', { cx: 46, cy: 112, rx: 11, ry: 7, fill: BODY, ...outlined });
+    add('ellipse', { cx: 74, cy: 112, rx: 11, ry: 7, fill: BODY, ...outlined });
+    // head + body: outline pass first, then fill on top so they read as one shape
+    add('ellipse', { cx: 60, cy: 88, rx: 29, ry: 25, fill: BODY, ...outlined, 'stroke-width': 7 });
+    add('circle', { cx: 60, cy: 52, r: 31, fill: BODY, ...outlined, 'stroke-width': 7 });
+    add('ellipse', { cx: 60, cy: 88, rx: 29, ry: 25, fill: BODY });
+    add('circle', { cx: 60, cy: 52, r: 31, fill: BODY });
+    add('ellipse', { cx: 60, cy: 92, rx: 18, ry: 16, fill: '#e4f7c9' });
+    add('path', { d: 'M48 86 Q60 89 72 86 M47 94 Q60 97 73 94', stroke: '#c3e59c', 'stroke-width': 2, fill: 'none', 'stroke-linecap': 'round' });
+    // leaf sprout on his head
+    add('path', { d: 'M60 22 Q59 14 61 8', stroke: LINE, 'stroke-width': 3.5, fill: 'none', 'stroke-linecap': 'round' });
+    add('path', { d: 'M60 11 Q49 -1 38 7 Q48 17 60 11 Z', fill: '#a6e07a', ...outlined, 'stroke-width': 3 });
+    add('path', { d: 'M61 9 Q73 -4 84 5 Q74 16 61 9 Z', fill: '#a6e07a', ...outlined, 'stroke-width': 3 });
+    // face
+    for (const x of [48, 72]) {
+      add('ellipse', { cx: x, cy: 50, rx: 5, ry: 6, fill: '#23302a' });
+      add('circle', { cx: x + 1.8, cy: 47.6, r: 2, fill: '#fff' });
+    }
+    add('ellipse', { cx: 39, cy: 61, rx: 6, ry: 3.6, fill: '#ff9fb2', opacity: 0.85 });
+    add('ellipse', { cx: 81, cy: 61, rx: 6, ry: 3.6, fill: '#ff9fb2', opacity: 0.85 });
+    if (mood === 'cheer') {
+      add('path', { d: 'M51 59 Q60 74 69 59 Z', fill: '#8a3a3a', stroke: '#23302a', 'stroke-width': 2.5, 'stroke-linejoin': 'round' });
+      add('path', { d: 'M55 65 Q60 70 65 65 Q60 63 55 65 Z', fill: '#ff8fa3' });
+    } else {
+      add('path', { d: 'M53 60 Q60 67 67 60', stroke: '#23302a', 'stroke-width': 2.8, fill: 'none', 'stroke-linecap': 'round' });
+    }
+    return svg;
+  }
+
   // ---------- storage and state ----------
   let storage = null;
   try { storage = window.localStorage; } catch (e) { /* storage blocked */ }
@@ -91,6 +146,57 @@
     return 'today';
   }
 
+  // ---------- celebration (petals, Sprout cheering, a soft chime) ----------
+  let audio = null;
+  /** Three quiet rising notes (C5, E5, G5). Called inside the tap handler, which iOS needs to allow sound. */
+  function chime() {
+    if (!state.settings.readAloud) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      audio = audio || new AudioCtx();
+      if (audio.state === 'suspended') audio.resume();
+      const start = audio.currentTime + 0.03;
+      [523.25, 659.25, 783.99].forEach((freq, i) => {
+        const osc = audio.createOscillator();
+        const gain = audio.createGain();
+        const t = start + i * 0.13;
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        osc.connect(gain);
+        gain.connect(audio.destination);
+        osc.start(t);
+        osc.stop(t + 0.55);
+      });
+    } catch (e) { /* sound is a nice-to-have */ }
+  }
+
+  const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const PETALS = ['🌸', '🌼', '🌷', '⭐'];
+
+  function celebrate() {
+    const old = document.querySelector('.celebrate');
+    if (old) old.remove();
+    const petals = [];
+    if (!reducedMotion()) {
+      for (let i = 0; i < 20; i++) {
+        const angle = (i / 20) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+        const dist = 38 + Math.random() * 18; // in vmin, so it fills phones and laptops alike
+        petals.push(el('span', { class: 'petal', style: {
+          '--dx': (Math.cos(angle) * dist).toFixed(1) + 'vmin', '--dy': (Math.sin(angle) * dist).toFixed(1) + 'vmin',
+          '--spin': Math.round((Math.random() - 0.5) * 540) + 'deg', '--delay': Math.round(Math.random() * 120) + 'ms',
+        } }, PETALS[i % PETALS.length]));
+      }
+    }
+    const overlay = el('div', { class: 'celebrate', 'aria-hidden': 'true' }, petals,
+      el('div', { class: 'cheer' }, sproutSvg('cheer'), el('span', { class: 'yay' }, 'Yay! 🎉')));
+    document.body.append(overlay);
+    setTimeout(() => overlay.remove(), 1400);
+  }
+
   // ---------- dialogs ----------
   const pickerDialog = document.getElementById('picker');
   const feelingDialog = document.getElementById('feeling');
@@ -102,9 +208,9 @@
   const isOpen = (dialog) => dialog.hasAttribute('open');
   function closeDialog(dialog) {
     if (!isOpen(dialog)) return;
-    if (typeof dialog.close === 'function') { dialog.close(); return; } // fires 'close'
-    dialog.removeAttribute('open'); // old browsers without <dialog>
-    lastDialogClose = performance.now();
+    lastDialogClose = performance.now(); // now, not in the 'close' event, which fires a moment later
+    if (typeof dialog.close === 'function') dialog.close();
+    else dialog.removeAttribute('open'); // old browsers without <dialog>
   }
 
   for (const dialog of [pickerDialog, feelingDialog]) {
@@ -214,12 +320,16 @@
       el('div', { class: 'feeling-grid' }, PB.FEELINGS.map((feeling) => el('button', {
         type: 'button', class: 'feeling',
         onclick: () => {
-          speak(FEELING_TEXT[feeling].text);
           const before = state;
           commit(PB.markDone(state, date, family.id, activity.id, feeling));
           closeDialog(feelingDialog);
           const row = app.querySelector(pickSelector(family.id, activity.id));
-          if (state !== before && row) row.classList.add('bloom');
+          if (state !== before) {
+            chime();
+            speak('Yay! ' + FEELING_TEXT[feeling].text);
+            celebrate();
+            if (row) row.classList.add('bloom');
+          }
           focusIn(pickSelector(family.id, activity.id));
         },
       }, el('span', { class: 'emoji', 'aria-hidden': 'true' }, FEELING_TEXT[feeling].face), el('span', { class: 'label' }, FEELING_TEXT[feeling].text)))),
@@ -268,8 +378,11 @@
     const flowers = shown.filter((e) => e.doneAt).length;
     const withPick = families.filter((f) => (picks[f.id] || []).length > 0).length;
     return el('section', { class: 'view today' },
-      el('h1', null, name ? `Hi ${name}!` : 'Hi there!'),
-      el('p', { class: 'sub' }, 'Pick at least one from each family'),
+      el('div', { class: 'hello' },
+        el('div', { class: 'buddy' }, sproutSvg('wave')),
+        el('div', { class: 'hello-text' },
+          el('h1', null, name ? `Hi ${name}!` : 'Hi there!'),
+          el('p', { class: 'bubble' }, 'Pick at least one from each family!'))),
       el('p', { class: 'progress' }, `🌸 ${flowers} ${flowers === 1 ? 'flower' : 'flowers'} today · ${withPick} of ${families.length} families`),
       el('div', { class: 'families' }, families.map((f) => familyCard(f, picks[f.id] || [], all))));
   }
@@ -281,13 +394,13 @@
       .sort((a, b) => a.doneAt.localeCompare(b.doneAt));
   }
 
-  function flowerFor(entry, families, small) {
+  function flowerFor(entry, families, small, index) {
     const family = families.find((f) => f.id === entry.familyId) || FALLBACK_COLORS;
     const activity = PB.findActivity(families, entry.familyId, entry.activityId);
     const svg = flowerSvg(family.color, family.light);
     if (small) return el('span', { class: 'mini-flower', role: 'img', 'aria-label': activity.label, title: activity.label }, svg);
-    return el('figure', { class: 'flower' }, svg,
-      el('figcaption', null, el('span', { class: 'emoji', 'aria-hidden': 'true' }, activity.emoji), ' ', activity.label));
+    return el('figure', { class: 'flower', style: { '--i': String(index || 0) } }, svg,
+      el('figcaption', null, el('span', { class: 'emoji', 'aria-hidden': 'true' }, activity.emoji), el('span', { class: 'flower-label' }, activity.label)));
   }
 
   function dayLabel(date, daysAgo) {
@@ -312,12 +425,18 @@
           entries.length ? entries.map((e) => flowerFor(e, families, true)) : el('span', { class: 'sprout', 'aria-label': 'nothing yet', role: 'img' }, '🌱'))));
     }
     return el('section', { class: 'view garden' },
-      el('h1', null, name ? `${name}'s garden` : 'My garden'),
-      el('section', { class: 'garden-box' },
+      el('div', { class: 'garden-title' },
+        el('div', { class: 'buddy' }, sproutSvg(todays.length ? 'cheer' : 'wave')),
+        el('h1', null, name ? `${name}'s garden` : 'My garden')),
+      el('section', { class: 'garden-scene', 'aria-label': 'Today' },
+        el('span', { class: 'sun', 'aria-hidden': 'true' }),
+        el('span', { class: 'cloud cloud-1', 'aria-hidden': 'true' }),
+        el('span', { class: 'cloud cloud-2', 'aria-hidden': 'true' }),
         el('h2', null, 'Today'),
         todays.length
-          ? el('div', { class: 'flowers' }, todays.map((e) => flowerFor(e, families, false)))
-          : el('p', { class: 'waiting' }, 'Your garden is waiting for its first flower! 🌱')),
+          ? el('div', { class: 'flowers' }, todays.map((e, i) => flowerFor(e, families, false, i)))
+          : el('p', { class: 'waiting' }, 'Your garden is waiting for its first flower! 🌱'),
+        el('div', { class: 'grass', 'aria-hidden': 'true' })),
       el('section', { class: 'garden-box' },
         el('h2', null, 'This week'),
         el('ul', { class: 'week' }, week)),
