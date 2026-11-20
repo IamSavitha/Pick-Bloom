@@ -14,7 +14,7 @@
   const MAX_SKIPPED = 2;
   const MAX_SUGGESTIONS = 5;
 
-  const active = (entries) => entries.filter((e) => e.activityId !== null);
+  const active = (entries) => entries.filter((e) => !e.removed);
 
   function entriesInRange(entries, endDate, days) {
     const start = PB.addDays(endDate, -(days - 1));

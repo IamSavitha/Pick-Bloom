@@ -1,11 +1,11 @@
 # Pick&Bloom — Design
 
 **Date:** 2026-11-19
-**Status:** Approved
+**Status:** Approved (amended 2026-11-19: pick one *or more* per family)
 
 ## What it is
 
-Pick&Bloom is a simple app for a young child. It's based on the "Pick One!" activity bank (`Kids_Pick_One_Activity_Button_Bank.pdf`), which has 12 families of activities. Each day the child picks one activity from each family. After doing it, he taps **"I did it!"** and a flower grows in his garden.
+Pick&Bloom is a simple app for a young child. It's based on the "Pick One!" activity bank (`Kids_Pick_One_Activity_Button_Bank.pdf`), which has 12 families of activities. Each day the child picks at least one activity from each family, and may pick more. After doing it, he taps **"I did it!"** and a flower grows in his garden.
 
 Every pick, every finished activity and every "how was it?" face gets saved. That history shows the grown-ups his **patterns**: what he loves, what he avoids, and what he starts but doesn't finish. Gentle suggestions turn those patterns into ideas for helping him grow.
 
@@ -37,8 +37,8 @@ Alternatives considered:
 
 - **Today**
   - **Family cards:** one card per visible family, in the PDF's colors.
-  - **Choosing:** tap a card to see that family's buttons (emoji plus a big word) and pick one. He can change his pick until it's done.
-  - **Finishing:** "I did it!" asks for a face (😄 Loved it / 🙂 It was okay / 😴 Tired), and then a flower blooms.
+  - **Choosing:** tap a card to see that family's buttons (emoji plus a big word) and pick **one or more**. There's no upper limit. Tapping a picked button again unpicks it, until it's done.
+  - **Finishing:** each pick has its own "I did it!", which asks for a face (😄 Loved it / 🙂 It was okay / 😴 Tired), and then that pick's flower blooms.
 - **Try something new:** buttons he has never tried show a ✨.
 - **Read aloud:** tapping a button reads its word out loud using the browser's built-in voice. Grown-ups can turn this off.
 - **My Garden**
@@ -75,17 +75,17 @@ Alternatives considered:
 
 ```
 state = {
-  version: 1,
+  version: 2,
   settings: { childName, readAloud, hiddenFamilies[], hiddenActivities["fam/act"],
               customActivities[{familyId,id,label,emoji}], updatedAt },
-  entries: [{ date:"YYYY-MM-DD", familyId, activityId|null, pickedAt, doneAt|null,
-              feeling:"loved"|"okay"|"tired"|null, updatedAt }]
+  entries: [{ date:"YYYY-MM-DD", familyId, activityId, pickedAt, doneAt|null,
+              feeling:"loved"|"okay"|"tired"|null, removed, updatedAt }]
 }
 ```
 
-- **One entry per family per day.** A cleared pick is kept as `activityId: null` so that syncing doesn't bring it back.
+- **One entry per activity picked, per family, per day.** The child can pick several in one family. An unpicked activity is kept with `removed: true` so that syncing doesn't bring it back. Version 1 saves (one pick per family) are upgraded automatically.
 - **Combining two devices' data:**
-  - Entries are matched by date and family. A finished entry wins over an unfinished one; otherwise the newer `updatedAt` wins.
+  - Entries are matched by date, family and activity. A finished entry wins over an unfinished one; otherwise the newer `updatedAt` wins.
   - For settings, the newer `updatedAt` wins.
 - **Supabase:** one table, `pickbloom_state (user_id pk, state jsonb, updated_at)`, with row-level security set to "own row only."
 

@@ -18,6 +18,22 @@
 - Run tests with `npm test` (that is, `node --test`). Do not `npm install` anything.
 - Never use `innerHTML` with user-entered text (child name, custom labels). Use `textContent`.
 
+> **Amendment (2026-11-19): pick at least one per family, not only one.** The user changed the rule after Tasks 1–4 were built. The code in the repo is now the source of truth for `store.js` and `insights.js`, and the Task 2/3 code blocks below show the original v1 version. What changed:
+> - **State:** `version: 2`. Each entry is one *activity* picked on a day: `{date, familyId, activityId, pickedAt, doneAt, feeling, removed, updatedAt}`. There is one entry per (date, family, activity).
+> - **API changes:**
+>   - `pickActivity(state, date, fam, act)` adds a pick. Picking the same activity again does nothing. Picking it after it was unpicked brings it back.
+>   - `unpickActivity(state, date, fam, act)` replaces `clearPick`. It keeps the entry with `removed: true`, and refuses to unpick an activity that's done.
+>   - `markDone(state, date, fam, act, feeling)` now takes `act`.
+>   - `entriesForDate` returns `familyId → array` of picks, oldest first.
+>   - `activeEntries` filters `!removed`.
+>   - `upgradeState` turns v1 saves into v2. `loadState` and `importBackup` both call it.
+> - **Merge key** is `date|family|activity`. Done beats not done, then the newer `updatedAt` wins.
+> - **Task 4 UI follow-up:**
+>   - The picker toggles several picks and stays open, with a "Done" button.
+>   - Each picked activity on a card has its own "I did it!" and face.
+>   - The subheading becomes "Pick at least one from each family".
+> - **Task 6:** in `tests/sync.test.js`, the in-flight test asserts `PB.entriesForDate(state, '2026-11-19').move[0].activityId`, because entries are now arrays.
+
 ---
 
 ### Task 1: Scaffold + activity bank data
@@ -1286,7 +1302,7 @@ test('edits made while a sync is in flight are kept', async () => {
   const p = sync.syncNow();
   state = PB.pickActivity(state, '2026-11-19', 'move', 'run', T2); // child taps during the sync
   await p;
-  assert.equal(PB.entriesForDate(state, '2026-11-19').move.activityId, 'run');
+  assert.equal(PB.entriesForDate(state, '2026-11-19').move[0].activityId, 'run');
 });
 
 test('a corrupt remote row is ignored and overwritten by valid local state', async () => {

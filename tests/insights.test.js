@@ -15,13 +15,13 @@ const TODAY = '2026-11-19';
 function entry(date, familyId, activityId, { done = true, feeling = 'okay', hour = 10 } = {}) {
   const [y, m, d] = date.split('-').map(Number);
   const iso = new Date(y, m - 1, d, hour).toISOString();
-  return { date, familyId, activityId, pickedAt: iso, doneAt: done ? iso : null, feeling: done ? feeling : null, updatedAt: iso };
+  return { date, familyId, activityId, pickedAt: iso, doneAt: done ? iso : null, feeling: done ? feeling : null, removed: false, updatedAt: iso };
 }
 const day = (n) => PB.addDays(TODAY, -n);
 
 test('entriesInRange keeps the last N days and drops cleared picks', () => {
   const es = [entry(day(0), 'move', 'run'), entry(day(6), 'move', 'run'), entry(day(7), 'move', 'run'),
-    { ...entry(day(1), 'calm', 'rest'), activityId: null }];
+    { ...entry(day(1), 'calm', 'rest'), removed: true }];
   assert.equal(IN.entriesInRange(es, TODAY, 7).length, 2);
 });
 

@@ -71,47 +71,68 @@ test('valid JSON with the wrong shape is also treated as corrupt', () => {
   assert.equal(PB.loadState(storage).recovered, true);
 });
 
-// --- picks
-test('pickActivity records one pick per family per day and can be changed', () => {
+// --- picks (a child may pick one or more activities per family per day)
+test('pickActivity adds picks; several per family are allowed; picking the same one twice is a no-op', () => {
   let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
   s = PB.pickActivity(s, '2026-11-19', 'move', 'swim', T2);
-  assert.equal(s.entries.length, 1);
-  assert.deepEqual(s.entries[0], {
-    date: '2026-11-19', familyId: 'move', activityId: 'swim',
-    pickedAt: T2.toISOString(), doneAt: null, feeling: null, updatedAt: T2.toISOString(),
-  });
+  assert.equal(PB.pickActivity(s, '2026-11-19', 'move', 'run', T2), s);
+  assert.deepEqual(s.entries, [
+    { date: '2026-11-19', familyId: 'move', activityId: 'run', pickedAt: T1.toISOString(), doneAt: null, feeling: null, removed: false, updatedAt: T1.toISOString() },
+    { date: '2026-11-19', familyId: 'move', activityId: 'swim', pickedAt: T2.toISOString(), doneAt: null, feeling: null, removed: false, updatedAt: T2.toISOString() },
+  ]);
 });
 
-test('markDone records the feeling; a done pick cannot be changed or cleared', () => {
+test('markDone records the feeling for one activity; a done pick cannot be unpicked or re-done', () => {
   let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
-  s = PB.markDone(s, '2026-11-19', 'move', 'loved', T2);
-  assert.equal(s.entries[0].doneAt, T2.toISOString());
-  assert.equal(s.entries[0].feeling, 'loved');
-  assert.equal(PB.pickActivity(s, '2026-11-19', 'move', 'swim', T2), s);
-  assert.equal(PB.clearPick(s, '2026-11-19', 'move', T2), s);
-  assert.equal(PB.markDone(s, '2026-11-19', 'move', 'okay', T2), s);
+  s = PB.pickActivity(s, '2026-11-19', 'move', 'swim', T1);
+  s = PB.markDone(s, '2026-11-19', 'move', 'run', 'loved', T2);
+  const today = PB.entriesForDate(s, '2026-11-19').move;
+  assert.deepEqual(today.map((e) => [e.activityId, e.doneAt, e.feeling]), [['run', T2.toISOString(), 'loved'], ['swim', null, null]]);
+  assert.equal(PB.unpickActivity(s, '2026-11-19', 'move', 'run', T2), s);
+  assert.equal(PB.markDone(s, '2026-11-19', 'move', 'run', 'okay', T2), s);
+  assert.equal(PB.pickActivity(s, '2026-11-19', 'move', 'run', T2), s);
 });
 
-test('markDone rejects unknown feelings and ignores families with no pick', () => {
+test('markDone rejects unknown feelings and ignores activities that are not picked', () => {
   const s = PB.emptyState();
-  assert.throws(() => PB.markDone(s, '2026-11-19', 'move', 'grumpy', T1), /Unknown feeling/);
-  assert.equal(PB.markDone(s, '2026-11-19', 'move', 'okay', T1), s);
+  assert.throws(() => PB.markDone(s, '2026-11-19', 'move', 'run', 'grumpy', T1), /Unknown feeling/);
+  assert.equal(PB.markDone(s, '2026-11-19', 'move', 'run', 'okay', T1), s);
 });
 
-test('clearPick keeps a tombstone (activityId null) that entriesForDate ignores', () => {
+test('unpickActivity keeps a tombstone (removed: true) that entriesForDate ignores; picking again revives it', () => {
   let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
-  s = PB.clearPick(s, '2026-11-19', 'move', T2);
+  s = PB.unpickActivity(s, '2026-11-19', 'move', 'run', T2);
   assert.equal(s.entries.length, 1);
-  assert.equal(s.entries[0].activityId, null);
+  assert.equal(s.entries[0].removed, true);
   assert.equal(s.entries[0].updatedAt, T2.toISOString());
   assert.deepEqual(PB.entriesForDate(s, '2026-11-19'), {});
   assert.deepEqual(PB.activeEntries(s), []);
+  assert.equal(PB.markDone(s, '2026-11-19', 'move', 'run', 'okay', T2), s);
+  s = PB.pickActivity(s, '2026-11-19', 'move', 'run', T2);
+  assert.equal(s.entries.length, 1);
+  assert.equal(s.entries[0].removed, false);
 });
 
-test('entriesForDate maps familyId to that day\'s entry', () => {
-  let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+test('entriesForDate maps familyId to that day\'s picks, oldest pick first', () => {
+  let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'swim', T2);
+  s = PB.pickActivity(s, '2026-11-19', 'move', 'run', T1);
   s = PB.pickActivity(s, '2026-11-18', 'calm', 'rest', T1);
-  assert.deepEqual(Object.keys(PB.entriesForDate(s, '2026-11-19')), ['move']);
+  const today = PB.entriesForDate(s, '2026-11-19');
+  assert.deepEqual(Object.keys(today), ['move']);
+  assert.deepEqual(today.move.map((e) => e.activityId), ['run', 'swim']);
+});
+
+test('upgradeState turns v1 saves (one pick per family, null = cleared) into v2', () => {
+  const v1 = { version: 1, settings: PB.emptyState().settings, entries: [
+    { date: '2026-11-18', familyId: 'move', activityId: 'run', pickedAt: T1.toISOString(), doneAt: T1.toISOString(), feeling: 'loved', updatedAt: T1.toISOString() },
+    { date: '2026-11-18', familyId: 'calm', activityId: null, pickedAt: T1.toISOString(), doneAt: null, feeling: null, updatedAt: T1.toISOString() },
+  ] };
+  const up = PB.upgradeState(v1);
+  assert.equal(PB.isValidState(up), true);
+  assert.deepEqual(up.entries.map((e) => [e.familyId, e.removed]), [['move', false]]);
+  const storage = memoryStorage({ [PB.STORAGE_KEY]: JSON.stringify(v1) });
+  assert.equal(PB.loadState(storage).recovered, false);
+  assert.equal(PB.importBackup(JSON.stringify({ app: 'pick-and-bloom', state: v1 })).ok, true);
 });
 
 // --- settings
@@ -169,21 +190,22 @@ test('importBackup rejects junk with a friendly error', () => {
 });
 
 // --- merge (sync)
-test('mergeStates keeps entries from both sides and prefers done, then newer', () => {
-  const ipad = PB.markDone(PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1), '2026-11-19', 'move', 'loved', T1);
-  let laptop = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'swim', T2); // newer but not done
+test('mergeStates keeps picks from both sides and prefers done, then newer, per activity', () => {
+  const ipad = PB.markDone(PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1), '2026-11-19', 'move', 'run', 'loved', T1);
+  let laptop = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T2); // newer but not done
+  laptop = PB.pickActivity(laptop, '2026-11-19', 'move', 'swim', T1);
   laptop = PB.pickActivity(laptop, '2026-11-19', 'calm', 'rest', T1);
   const merged = PB.mergeStates(laptop, ipad);
   const today = PB.entriesForDate(merged, '2026-11-19');
-  assert.equal(today.move.activityId, 'run');
-  assert.equal(today.calm.activityId, 'rest');
+  assert.deepEqual(today.move.map((e) => [e.activityId, e.feeling]), [['run', 'loved'], ['swim', null]]);
+  assert.equal(today.calm[0].activityId, 'rest');
   assert.deepEqual(PB.mergeStates(ipad, laptop).entries, merged.entries);
 });
 
-test('mergeStates: a newer clear beats an older pick; newer settings win', () => {
+test('mergeStates: a newer unpick beats an older pick; newer settings win', () => {
   const picked = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
-  const cleared = PB.clearPick(picked, '2026-11-19', 'move', T2);
-  assert.deepEqual(PB.entriesForDate(PB.mergeStates(picked, cleared), '2026-11-19'), {});
+  const unpicked = PB.unpickActivity(picked, '2026-11-19', 'move', 'run', T2);
+  assert.deepEqual(PB.entriesForDate(PB.mergeStates(picked, unpicked), '2026-11-19'), {});
   const named = PB.setChildName(PB.emptyState(), 'Arjun', T2);
   const old = PB.setChildName(PB.emptyState(), 'Old', T1);
   assert.equal(PB.mergeStates(old, named).settings.childName, 'Arjun');
