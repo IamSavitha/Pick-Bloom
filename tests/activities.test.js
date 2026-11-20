@@ -2,15 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { FAMILIES } = require('../activities.js');
 
-test('has the 12 families from the activity bank, in PDF order', () => {
+test('has the 12 families from the activity bank in PDF order, then Clean & Healthy', () => {
   assert.deepEqual(FAMILIES.map((f) => f.id), [
     'move', 'learn', 'create', 'play', 'outdoor', 'friends',
-    'calm', 'feelings', 'ican', 'chef', 'imagine', 'bedtime',
+    'calm', 'feelings', 'ican', 'chef', 'imagine', 'bedtime', 'hygiene',
   ]);
 });
 
 test('activity counts match the PDF (plus Language, Speaking, Listening in Learn & Think)', () => {
-  assert.deepEqual(FAMILIES.map((f) => f.activities.length), [12, 15, 12, 12, 12, 10, 10, 8, 10, 10, 12, 8]);
+  assert.deepEqual(FAMILIES.map((f) => f.activities.length), [12, 15, 12, 12, 12, 10, 10, 8, 10, 10, 12, 8, 12]);
 });
 
 test('every family has a name and two hex colors', () => {

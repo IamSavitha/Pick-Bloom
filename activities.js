@@ -76,6 +76,13 @@
       a('cuddle', 'Cuddle', '🤗'), a('slow-breaths', 'Slow Breaths', '🌬️'), a('happy-memory', 'Happy Memory', '💭'),
       a('gratitude', 'Gratitude', '🙏'), a('best-part-of-day', 'Best Part of Day', '⭐'),
     ] },
+    // Added for the family (not in the printed PDF): everyday hygiene habits.
+    { id: 'hygiene', name: 'Clean & Healthy', color: '#1f7a99', light: '#ddf3fa', activities: [
+      a('bath', 'Bath', '🛁'), a('morning-brush', 'Morning Brush', '🪥'), a('night-brush', 'Night Brush', '🌙'),
+      a('wash-hands', 'Wash Hands', '🧼'), a('wash-face', 'Wash Face', '💦'), a('wipe-nose', 'Wipe Nose', '🤧'),
+      a('tissue-in-bin', 'Tissue in Bin', '🗑️'), a('cover-cough', 'Cover Cough', '😷'), a('potty-time', 'Potty Time', '🚽'),
+      a('comb-hair', 'Comb Hair', '💇'), a('clean-clothes', 'Clean Clothes', '👕'), a('trim-nails', 'Trim Nails', '💅'),
+    ] },
   ];
 
   const api = { FAMILIES };

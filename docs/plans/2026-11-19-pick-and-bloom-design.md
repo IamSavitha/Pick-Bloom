@@ -5,7 +5,7 @@
 
 ## What it is
 
-Pick&Bloom is a simple app for a young child. It's based on the "Pick One!" activity bank (`Kids_Pick_One_Activity_Button_Bank.pdf`), which has 12 families of activities. Each day the child picks at least one activity from each family, and may pick more. After doing it, he taps **"I did it!"** and a flower grows in his garden.
+Pick&Bloom is a simple app for a young child. It's based on the "Pick One!" activity bank (`Kids_Pick_One_Activity_Button_Bank.pdf`), which has 12 families of activities. A 13th family, **Clean & Healthy** (hygiene habits such as bath, morning and night brush, washing hands, wiping the nose, tissue in the bin and potty time), was added on 2026-11-19 at the user's request. Each day the child picks at least one activity from each family, and may pick more. After doing it, he taps **"I did it!"** and a flower grows in his garden.
 
 Every pick, every finished activity and every "how was it?" face gets saved. That history shows the grown-ups his **patterns**: what he loves, what he avoids, and what he starts but doesn't finish. Gentle suggestions turn those patterns into ideas for helping him grow.
 
