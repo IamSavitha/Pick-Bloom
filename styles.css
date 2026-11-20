@@ -826,6 +826,7 @@ dialog:not([open]) { display: none; }
 .gu-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .gu-range .gu-seg { flex: 0 1 340px; }
 .gu-range .gu-hint { margin: 0; }
+.gu-stack > .gu-tiles-note { margin: -6px 0 0; font-size: 14px; }
 .gu-days { margin-top: 4px; }
 .grownups .gu-days button { flex: 1 1 72px; }
 
@@ -1028,7 +1029,8 @@ dialog:not([open]) { display: none; }
 @media (max-width: 359px) { .reward-name { font-size: 12px; } .reward-emoji { font-size: 30px; } .reward-tile { min-height: 80px; } }
 .reward-tile.selected { border-color: var(--brand); background: #eef8e8; box-shadow: inset 0 0 0 1px var(--brand); }
 .reward-tile.selected .reward-name { color: #1f5a33; font-weight: 700; }
-.reward-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; }
+.reward-tile:has(:focus-visible) { outline: 3px solid var(--ink); outline-offset: 2px; }
+@supports not selector(:has(*)) { .reward-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; } }
 .gu-fams { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: 0 10px; }
 @media (min-width: 600px) { .gu-fams { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 .gu-fams .gu-check { gap: 8px; font-size: 16px; line-height: 1.2; }
@@ -1070,7 +1072,8 @@ dialog:not([open]) { display: none; }
   font-weight: 600;
   cursor: pointer;
 }
-.file-btn:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; }
+.file-btn:has(:focus-visible) { outline: 3px solid var(--ink); outline-offset: 2px; }
+@supports not selector(:has(*)) { .file-btn:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; } }
 .gu-note { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; font-size: 15px; font-weight: 600; }
 .gu-note.ok { background: #eef8e8; color: #1f5a33; }
 .gu-note.error { background: #fdecea; color: var(--gu-danger); }
@@ -1119,6 +1122,7 @@ dialog:not([open]) { display: none; }
   cursor: pointer;
 }
 .avatar-tile.selected { border-color: var(--brand); background: #eef8e8; box-shadow: inset 0 0 0 1px var(--brand); }
-.avatar-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; }
+.avatar-tile:has(:focus-visible) { outline: 3px solid var(--ink); outline-offset: 2px; }
+@supports not selector(:has(*)) { .avatar-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; } }
 .gu-for { margin: 4px 0 -2px; padding: 10px 14px; border-radius: 14px; background: #eef8e8; color: #1f5a33; font-weight: 600; overflow-wrap: anywhere; }
 .gu-for-who { font-weight: 700; }

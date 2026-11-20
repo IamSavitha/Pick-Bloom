@@ -4,6 +4,8 @@
 
   const { el, FEELING_TEXT } = window.PBApp;
   const HOLD_MS = 3000;
+  const RELOCK_HIDDEN_MS = 60000;   // away this long (app switched, screen locked) locks the corner again
+  const RELOCK_IDLE_MS = 600000;    // 10 minutes with no tap or key while open locks it too
   const MAX_LOVED = 8;
   const params = new URLSearchParams(location.search);
 
@@ -55,25 +57,44 @@
   }
 
   // A text field commits on "change", which fires on blur. If that blur came from tapping another control,
-  // re-rendering at once would swap that control out mid-tap and swallow the tap. So wait until the tap is over.
+  // re-rendering at once would swap that control out mid-tap and swallow the tap. So wait until the tap is over:
+  // right after its click has been handled, or 350ms after the finger lifts (iPad sends click late, or not at all
+  // for a tap on nothing). Never wait more than 1s, and a window blur ends the tap too.
   let pointerHeld = false;
-  let afterPointer = [];
+  let queued = [];
+  let flushTimer = null;
+  let capTimer = null;
+  function flushQueued() {
+    clearTimeout(flushTimer);
+    clearTimeout(capTimer);
+    flushTimer = capTimer = null;
+    const run = queued;
+    queued = [];
+    run.forEach((fn) => fn());
+  }
+  function flushIn(ms) {
+    if (!queued.length) return;
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flushQueued, ms);
+  }
   document.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
-  const releasePointer = () => {
-    pointerHeld = false;
-    const queued = afterPointer;
-    afterPointer = [];
-    if (queued.length) setTimeout(() => queued.forEach((fn) => fn()), 0);
-  };
+  const releasePointer = () => { pointerHeld = false; flushIn(350); };
   document.addEventListener('pointerup', releasePointer, true);
   document.addEventListener('pointercancel', releasePointer, true);
-  const whenTapEnds = (fn) => { if (pointerHeld) afterPointer.push(fn); else setTimeout(fn, 0); };
+  window.addEventListener('blur', releasePointer);
+  document.addEventListener('click', () => flushIn(0), true); // the timeout runs after this click's own handlers
+  function whenTapEnds(fn) {
+    queued.push(fn);
+    if (!capTimer) capTimer = setTimeout(flushQueued, 1000);
+    if (!pointerHeld && !flushTimer) flushIn(0);
+  }
 
   function draftInput(id, fallback, props) {
     return el('input', { type: 'text', id, value: drafts[id] !== undefined ? drafts[id] : fallback,
       oninput: (e) => { drafts[id] = e.target.value; }, ...props });
   }
   const clearDrafts = (...ids) => ids.forEach((id) => { delete drafts[id]; });
+  const clearAllDrafts = () => clearDrafts(...Object.keys(drafts));
 
   // ---------- small shared pieces ----------
   const dot = (f) => el('span', { class: 'gu-dot', style: famStyle(f), 'aria-hidden': 'true' });
@@ -131,6 +152,7 @@
       holdTimer = setTimeout(() => {
         holdTimer = null;
         unlocked = true;
+        lastInput = Date.now();
         announce('Grown-up corner open');
         rerender(['gu-tab-' + tab]);
       }, HOLD_MS);
@@ -163,6 +185,35 @@
         button,
         note));
   }
+
+  // ---------- locking again ----------
+  /** Lock without leaving the page (back from the background, or idle): a toddler must not find it open. */
+  function relock() {
+    unlocked = false;
+    cancelHold();
+    editing = null;
+    editingKid = null;
+    backupNote = null;
+    clearAllDrafts();
+    if (location.hash === '#grownups') window.PBApp.render();
+  }
+  // Not on hide itself: Android's file chooser hides the page while a backup is being picked.
+  let hiddenAt = null;
+  let lastInput = Date.now();
+  const markHidden = () => { if (hiddenAt === null) hiddenAt = Date.now(); };
+  const backFromHidden = () => {
+    const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+    hiddenAt = null;
+    if (away > RELOCK_HIDDEN_MS) relock();
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') markHidden();
+    else backFromHidden();
+  });
+  window.addEventListener('pagehide', markHidden);
+  window.addEventListener('pageshow', backFromHidden);
+  for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => { lastInput = Date.now(); }, true);
+  setInterval(() => { if (unlocked && Date.now() - lastInput > RELOCK_IDLE_MS) relock(); }, 5000);
 
   // ---------- unlocked shell ----------
   function lock() {
@@ -291,6 +342,7 @@
           (o) => o.days === rangeDays, (o) => { rangeDays = o.days; rerender([o.id]); }),
         ranged.length ? null : el('p', { class: 'gu-hint' }, `No picks in ${rangeText} yet.`)),
       tiles,
+      hint(`${capitalize(reward.many)} and picks count every family, hidden ones too.`, { class: 'gu-hint gu-tiles-note', id: 'gu-tiles-note' }),
       card('Family by family', hint(`Counts are for ${rangeText}. "Last picked" looks at all time.`),
         el('ul', { class: 'fam-rows' }, head, rows)),
       el('div', { class: 'gu-two' },
@@ -716,6 +768,7 @@
     editing = null;
     editingKid = null;
     backupNote = null;
+    clearAllDrafts();
     cancelHold();
   });
 
