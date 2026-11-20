@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pick&amp;Bloom</title>
+  <meta name="theme-color" content="#2a7a46">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Pick&amp;Bloom">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="banner" class="banner" hidden></div>
+  <main id="app"></main>
+  <nav class="tabs" aria-label="Main">
+    <a href="#today"><span class="tab-icon" aria-hidden="true">🌼</span> Today</a>
+    <a href="#garden"><span class="tab-icon" aria-hidden="true">🌷</span> My Garden</a>
+    <a href="#grownups"><span class="tab-icon" aria-hidden="true">🔒</span> Grown-ups</a>
+  </nav>
+  <dialog id="picker"></dialog>
+  <dialog id="feeling"></dialog>
+  <script src="activities.js"></script>
+  <script src="store.js"></script>
+  <script src="insights.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

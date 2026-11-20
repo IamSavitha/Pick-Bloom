@@ -1,0 +1,300 @@
+/* Pick&Bloom styles: mobile-first, touch-first, light theme only. */
+:root {
+  --bg: #fffaf2;
+  --ink: #22313f;
+  --muted: #5b6b7a;
+  --card: #ffffff;
+  --radius: 18px;
+  --line: #eadfcc;
+  --brand: #2a7a46;
+  --fam: #2a7a46;
+  --fam-light: #e0f4e4;
+  --tabs-h: 64px;
+  --gutter-l: max(16px, env(safe-area-inset-left));
+  --gutter-r: max(16px, env(safe-area-inset-right));
+  color-scheme: light;
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.35;
+  padding: env(safe-area-inset-top) var(--gutter-r) calc(var(--tabs-h) + env(safe-area-inset-bottom) + 24px) var(--gutter-l);
+}
+
+#app { max-width: 1100px; margin: 0 auto; padding-top: 20px; }
+
+h1 { font-size: clamp(28px, 7vw, 40px); line-height: 1.15; margin: 0 0 4px; overflow-wrap: anywhere; }
+h2 { font-size: 22px; margin: 0 0 12px; }
+.sub { margin: 0 0 12px; color: var(--muted); font-size: 20px; }
+
+/* ---------- notice banner ---------- */
+.banner {
+  margin: 0 calc(-1 * var(--gutter-r)) 0 calc(-1 * var(--gutter-l));
+  padding: 12px var(--gutter-r) 12px var(--gutter-l);
+  background: #fff1a8;
+  border-bottom: 2px solid #e8cf4a;
+  color: #4a3b00;
+  font-size: 16px;
+  text-align: center;
+}
+.banner[hidden] { display: none; }
+
+/* ---------- buttons ---------- */
+button {
+  font: inherit;
+  min-height: 64px;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 10px 16px;
+  border: 2px solid var(--fam);
+  border-radius: var(--radius);
+  background: var(--fam-light);
+  color: var(--fam);
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms ease;
+}
+button:active { transform: scale(0.97); }
+button:focus-visible, a:focus-visible { outline: 4px solid var(--ink); outline-offset: 3px; }
+.emoji, .big-emoji { font-size: 34px; line-height: 1; text-transform: none; }
+.label { overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
+
+button.secondary { border-color: #c9bfae; background: var(--card); color: var(--ink); }
+
+/* ---------- Today ---------- */
+.progress {
+  display: inline-block;
+  margin: 0 0 18px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 2px solid var(--line);
+  font-weight: 700;
+}
+
+.families {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.family-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; border-radius: var(--radius); }
+
+.family-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 170px;
+  overflow: hidden;
+  text-align: center;
+  border: 2px solid var(--fam);
+  border-radius: var(--radius);
+  background: var(--fam-light);
+  color: var(--fam);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.fam-name {
+  display: block;
+  padding: 8px 10px;
+  background: var(--fam);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 8px;
+}
+.card-body .big-emoji { font-size: 40px; }
+.card-body .label { font-size: 19px; }
+.card-body .hint { font-size: 15px; font-weight: 800; }
+.plus {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 3px dashed var(--fam);
+  border-radius: 50%;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.did-it { background: var(--fam); color: #fff; font-size: 19px; }
+
+.family-card.done .family-main { background: var(--card); }
+.family-card.done .face { font-size: 30px; line-height: 1; }
+
+/* ---------- dialogs ---------- */
+dialog {
+  width: min(640px, calc(100vw - 24px));
+  max-width: none;
+  max-height: 85vh;
+  overflow: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 24px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+dialog::backdrop { background: rgba(20, 30, 40, 0.55); }
+
+.dialog-head {
+  margin: 0;
+  padding: 16px 20px;
+  background: var(--fam);
+  color: #fff;
+  font-size: 22px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.dialog-inner > .activity-grid, .dialog-inner > .feeling-grid { padding: 16px; }
+
+.activity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+.activity {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 112px;
+  padding: 14px 4px;
+}
+.activity[aria-pressed="true"] {
+  background: var(--fam);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--card), 0 0 0 7px var(--fam);
+}
+.badge-new { position: absolute; top: 6px; right: 8px; font-size: 20px; line-height: 1; }
+
+.feeling-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.feeling { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 120px; padding: 10px 4px; }
+.feeling .emoji { font-size: 48px; }
+
+.dialog-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--card);
+  border-top: 2px solid var(--line);
+}
+.dialog-foot button { flex: 1 1 140px; max-width: 260px; }
+
+/* ---------- Garden ---------- */
+.garden-box {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--card);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+}
+.flowers { display: flex; flex-wrap: wrap; gap: 12px 10px; }
+.flower { margin: 0; width: 92px; text-align: center; }
+.flower svg { display: block; width: 72px; height: 96px; margin: 0 auto; }
+.flower figcaption { font-size: 14px; font-weight: 800; text-transform: uppercase; overflow-wrap: anywhere; }
+.flower figcaption .emoji { font-size: 22px; vertical-align: middle; }
+.waiting { margin: 0; font-size: 20px; color: var(--muted); }
+
+.week { list-style: none; margin: 0; padding: 0; }
+.week-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 0;
+  border-top: 2px dashed var(--line);
+}
+.week-row:first-child { border-top: 0; }
+.day { flex: 0 0 104px; font-weight: 800; }
+.mini-flowers { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.mini-flower svg { display: block; width: 30px; height: 40px; }
+.sprout { font-size: 26px; }
+.total { margin: 18px 0 0; font-size: 20px; font-weight: 800; text-align: center; }
+
+.placeholder { font-size: 20px; color: var(--muted); }
+
+/* ---------- bottom tabs ---------- */
+.tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: #fff;
+  border-top: 2px solid var(--line);
+}
+.tabs a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--tabs-h);
+  padding: 4px;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-icon { font-size: 24px; line-height: 1; }
+.tabs a[aria-current="page"] { color: var(--ink); font-weight: 800; box-shadow: inset 0 -5px 0 var(--brand); }
+
+@media (min-width: 600px) {
+  .tabs a { flex-direction: row; gap: 8px; font-size: 18px; }
+}
+
+/* ---------- bloom celebration ---------- */
+@keyframes bloom {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+  50% { transform: scale(1.06); box-shadow: 0 0 0 6px var(--fam-light), 0 0 28px 6px var(--fam); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+}
+.bloom { animation: bloom 600ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bloom { animation: none; }
+  button { transition: none; }
+  button:active { transform: none; }
+}
