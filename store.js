@@ -28,7 +28,7 @@
 
   // ---------- shape ----------
   function defaultSettings() {
-    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], activityOverrides: {}, reward: 'flower', updatedAt: EPOCH };
+    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], activityOverrides: {}, reward: 'flower', avatar: '🙂', updatedAt: EPOCH };
   }
   function emptyState() { return { version: VERSION, settings: defaultSettings(), entries: [] }; }
 
@@ -53,7 +53,7 @@
     return isObject(s) && isString(s.childName) && typeof s.readAloud === 'boolean'
       && isStringArray(s.hiddenFamilies) && isStringArray(s.hiddenActivities)
       && Array.isArray(s.customActivities) && s.customActivities.every(isValidCustom)
-      && isValidOverrides(s.activityOverrides) && REWARDS.some((r) => r.id === s.reward) && isString(s.updatedAt);
+      && isValidOverrides(s.activityOverrides) && REWARDS.some((r) => r.id === s.reward) && isString(s.avatar) && isString(s.updatedAt);
   }
   function isValidState(s) {
     return isObject(s) && s.version === VERSION && isValidSettings(s.settings)
@@ -63,7 +63,7 @@
   /**
    * Bring older saved shapes up to date:
    * - v1 allowed one pick per family and marked a cleared pick with activityId null;
-   * - settings added later (activityOverrides, reward) get their defaults.
+   * - settings added later (activityOverrides, reward, avatar) get their defaults.
    */
   function upgradeState(s) {
     if (!isObject(s)) return s;
@@ -181,6 +181,11 @@
   }
   function setReward(state, rewardId, now) {
     return REWARDS.some((r) => r.id === rewardId) ? updateSettings(state, { reward: rewardId }, now) : state;
+  }
+  /** The child's picture on the "Who's playing?" screen (an emoji). Blank is ignored. */
+  function setAvatar(state, emoji, now) {
+    const clean = String(emoji || '').trim().slice(0, 8);
+    return clean ? updateSettings(state, { avatar: clean }, now) : state;
   }
   function rewardOf(state) { return REWARDS.find((r) => r.id === state.settings.reward) || REWARDS[0]; }
   function setReadAloud(state, on, now) { return updateSettings(state, { readAloud: !!on }, now); }
@@ -302,7 +307,7 @@
   const api = {
     STORAGE_KEY, FEELINGS, REWARDS, dateKey, addDays, daysBetween, emptyState, isValidState, upgradeState, loadState, saveState,
     pickActivity, unpickActivity, markDone, removePick, activeEntries, entriesForDate, activityKey,
-    setChildName, setReadAloud, setReward, rewardOf, toggleFamilyHidden, toggleActivityHidden, addCustomActivity, renameActivity, resetActivity,
+    setChildName, setReadAloud, setReward, rewardOf, setAvatar, toggleFamilyHidden, toggleActivityHidden, addCustomActivity, renameActivity, resetActivity,
     familiesWithSettings, visibleFamilies, findActivity, exportBackup, importBackup, mergeStates,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
