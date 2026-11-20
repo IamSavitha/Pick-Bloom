@@ -1185,7 +1185,69 @@ It uses `PBApp` (from Task 4), `PB` store and insights functions, and `PB.FAMILI
 
 ---
 
+### Task 5b: Multiple children (wire `family.js` into the app)
+
+> Added 2026-11-19 at the user's request: "data saved child-wise; the parent can add a child name for each track". `family.js` and its tests already exist (commit e24b248). This task wires them into the UI.
+
+**Model (already built):**
+- **What a family is:** `{version: 3, children: [child…]}`. Each child is a per-child store state plus `{id, removed, createdAt, updatedAt}`, so all `store.js` functions work on a child.
+- **API:**
+  - `PB.emptyFamily`, `loadFamily(storage)` (returns `{family, persistent, recovered}`, and upgrades old single-child saves into child `child-1`), `saveFamily`.
+  - `activeChildren`, `getChild`, `updateChild(f, id, fn)`, `addChild(f, name, avatar)`, `removeChild(f, id)` (a tombstone; never the last child), `chooseActiveChild(f, rememberedId)`.
+  - `mergeFamilies`, `exportFamilyBackup`, `importFamilyBackup`, `AVATARS`.
+
+**Files:** modify `app.js`, `grownups.js`, `index.html` (load `family.js` after `store.js`, before `insights.js`), and `styles.css`.
+
+**App state (`app.js`):**
+- Replace the single `state` with `family` (from `PB.loadFamily`) plus `activeChildId`.
+  - `activeChildId` is remembered per device in `localStorage['pickbloom.activeChild']`, read and written in try/catch.
+  - Choose it with `PB.chooseActiveChild(family, remembered)`.
+- `getState()` returns the active child.
+- `commit(nextChild)` becomes `family = PB.updateChild(family, activeChildId, () => nextChild)`, then `saveFamily`, `render`, and `afterCommit`. That keeps every existing call site (`commit(PB.pickActivity(getState(), …))`) unchanged.
+- Add `PBApp.getFamily()`, `PBApp.commitFamily(nextFamily)` (for add/remove child and restore), `PBApp.activeChildId()` and `PBApp.setActiveChild(id)` (which saves the remembered id and re-renders).
+
+**Child's side:**
+- **"Who's playing?" screen:**
+  - **When it shows:** when there are 2 or more active children, it appears on first load of each session (per page load) before Today, and again whenever the avatar chip is tapped.
+  - **Layout:** big avatar tiles (emoji about 72px plus name), each at least 120px. Sprout says "Who's playing?".
+  - **Sound and choosing:** tapping a tile speaks the name if Sounds & voice is on, sets the active child, and goes to Today.
+  - **With 1 child:** skip it entirely.
+- **Avatar chip:** Today and the garden show the active child's avatar and name in a chip by the greeting. Tapping it opens "Who's playing?". Hide the chip when there's only one child.
+
+**Grown-up corner:**
+- **Child switcher:** a row of chips (avatar plus name) at the top, under the header, when there are 2 or more children. It switches which child every sub-tab shows (it calls `setActiveChild`).
+- **Settings → "Children" section** at the top, listing every active child:
+  - **Edit:** name plus an avatar picker from `PB.AVATARS` (`setChildName`/`setAvatar` through `updateChild`).
+  - **Remove:** `confirm('Remove {name}? Their picks are kept in backups but hidden here.')`, then `removeChild`. It is disabled for the last child.
+  - **Add a child:** name (required, maxlength 30) plus an avatar picker. New children get a fresh default setup.
+- **The rest of Settings** (name, sounds, reward, families, buttons) now applies to the active child. Add a line at the top: "These settings are for {avatar} {name}."
+- **Backup:** download uses `exportFamilyBackup(family)`. Restore uses `importFamilyBackup`, then `commitFamily(PB.mergeFamilies(family, result.family))`. Old single-child backups import as child `child-1`.
+
+**Verify:**
+- `npm test`.
+- `RENDER_OK`.
+- A click-through:
+  - an old single-child save loads as one child, with no chooser and no chip;
+  - add a second child: the chooser appears on reload and the chip shows;
+  - picks go to the right child;
+  - grown-up patterns and Fix picks follow the switcher;
+  - settings are per child: the reward and hidden families differ by child;
+  - removing a child hides it and refuses the last one;
+  - backup export and import round-trip.
+- Screenshots of "Who's playing?" and the Children settings at 390, 820 and 1440.
+
+**Commit:** `feat: multiple children with Who's playing and per-child settings`
+
+---
+
 ### Task 6: Sync across devices (Supabase) + docs
+
+> **Amendment (2026-11-19):** sync works on the whole **family** (all children), not a single child state.
+> - In `sync.js`, `getState`/`setState` deal in families. It uses `PB.upgradeFamily` and `PB.isValidFamily` on the remote row, and `PB.mergeFamilies` to combine. The `sync.js` code below is already updated.
+> - In the app, wire `getState: () => family` and `setState` to replace `family`, then save and render.
+> - In `tests/sync.test.js`, build fixtures as families, e.g. `FAM.updateChild(FAM.emptyFamily(), FAM.FIRST_CHILD_ID, (c) => PB.pickActivity(c, …))`. Assert through `FAM.getChild(state, FAM.FIRST_CHILD_ID)`. The original test intents are unchanged.
+> - **Hosting** is GitHub Pages (`main`, root) at `https://iamsavitha.github.io/Pick-Bloom/`, not Vercel. Update the README's hosting section to match.
+> - `config.js` gets the real project values: `supabaseUrl: 'https://qxrmjryffcyujzpyqcfu.supabase.co'` and `supabaseAnonKey: 'sb_publishable_k4aa-C7KgPxZQ07BgMJqdw_vSjEs319'`. Both are public by design, and RLS plus disabled sign-ups protect the data.
 
 **Files:**
 - Create: `sync.js`, `tests/sync.test.js`, `config.js`, `supabase/schema.sql`, `docs/MANUAL_TEST.md`
@@ -1351,7 +1413,8 @@ test('a corrupt remote row is ignored and overwritten by valid local state', asy
 (function (root) {
   'use strict';
 
-  const PB = (typeof module === 'object' && module.exports) ? require('./store.js') : root.PB;
+  const PB = (typeof module === 'object' && module.exports)
+    ? { ...require('./store.js'), ...require('./family.js') } : root.PB;
   const TABLE = 'pickbloom_state';
 
   /**
@@ -1372,12 +1435,12 @@ test('a corrupt remote row is ignored and overwritten by valid local state', asy
         const { data, error } = await client.from(TABLE).select('state').eq('user_id', user.id).maybeSingle();
         if (error) throw error;
         const local = getState();
-        const remote = data ? PB.upgradeState(data.state) : null;
-        const merged = remote && PB.isValidState(remote) ? PB.mergeStates(local, remote) : local;
+        const remote = data ? PB.upgradeFamily(data.state) : null;
+        const merged = remote && PB.isValidFamily(remote) ? PB.mergeFamilies(local, remote) : local;
         const { error: upError } = await client.from(TABLE).upsert({ user_id: user.id, state: merged, updated_at: new Date().toISOString() });
         if (upError) throw upError;
         // Merge again with whatever the child did while we were waiting on the network.
-        setState(PB.mergeStates(getState(), merged));
+        setState(PB.mergeFamilies(getState(), merged));
         onStatus({ kind: 'synced', at: new Date() });
       } catch (err) {
         onStatus({ kind: 'error', message: (err && err.message) || 'Sync failed' });
