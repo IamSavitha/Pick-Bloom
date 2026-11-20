@@ -285,3 +285,16 @@ test('upgradeState fills in a missing reward setting with flower', () => {
   assert.equal(PB.isValidState(bad), false);
 });
 
+
+test('mergeStates keeps grown-up-added buttons and renames from both sides even when the other settings are newer', () => {
+  let laptop = PB.addCustomActivity(PB.emptyState(), BASE, 'move', 'Kite', '🪁', T1);
+  laptop = PB.renameActivity(laptop, BASE, 'move', 'run', 'Zoom', '🏎️', T1);
+  let ipad = PB.addCustomActivity(PB.emptyState(), BASE, 'calm', 'Hug', '🤗', T1);
+  ipad = PB.setChildName(ipad, 'Arjun', T2); // newer settings
+  for (const merged of [PB.mergeStates(laptop, ipad), PB.mergeStates(ipad, laptop)]) {
+    assert.equal(merged.settings.childName, 'Arjun');
+    assert.deepEqual(merged.settings.customActivities.map((a) => a.id).sort(), ['custom-hug', 'custom-kite']);
+    assert.equal(merged.settings.activityOverrides['move/run'].label, 'Zoom');
+    assert.equal(PB.isValidState(merged), true);
+  }
+});

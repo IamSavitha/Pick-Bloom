@@ -300,7 +300,17 @@
       byKey.set(key, prev ? preferredEntry(prev, e) : e);
     }
     const entries = [...byKey.values()].sort((a, b) => entryKey(a).localeCompare(entryKey(b)));
-    const settings = remote.settings.updatedAt > local.settings.updatedAt ? remote.settings : local.settings;
+    const [winner, other] = remote.settings.updatedAt > local.settings.updatedAt
+      ? [remote.settings, local.settings] : [local.settings, remote.settings];
+    // Newer settings win, but buttons a grown-up added (or renamed) on either device are never dropped:
+    // picks may point at them. Custom ids are never reused, so this can't revive anything on purpose removed.
+    const customKey = (x) => x.familyId + '/' + x.id;
+    const known = new Set(winner.customActivities.map(customKey));
+    const settings = {
+      ...winner,
+      customActivities: [...winner.customActivities, ...other.customActivities.filter((x) => !known.has(customKey(x)))],
+      activityOverrides: { ...other.activityOverrides, ...winner.activityOverrides },
+    };
     return { version: VERSION, settings, entries };
   }
 
