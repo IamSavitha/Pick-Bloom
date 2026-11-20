@@ -1,0 +1,9 @@
+{
+  "name": "pick-and-bloom",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kids pick one activity per family each day and grow a garden; grown-ups see choice patterns.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
