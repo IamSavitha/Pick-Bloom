@@ -1105,6 +1105,30 @@ Run `npm test` and confirm nothing regressed.
 
 ### Task 5: Grown-up corner (gate, Patterns, Ideas, Settings, Backup)
 
+> **Amendment (2026-11-19), from the user. This overrides the Settings and sub-tab details below wherever they conflict.**
+> - **Store API, already in `store.js`:**
+>   - `renameActivity(state, PB.FAMILIES, fam, act, label, emoji)`. A blank emoji keeps the current one.
+>   - `resetActivity(state, fam, act)`.
+>   - `removePick(state, date, fam, act)`: a grown-up correction that works even on done picks.
+>   - `familiesWithSettings` now applies renames and marks `renamed: true`. Learn & Think now has Language, Speaking and Listening built in.
+> - **Sub-tabs:** `Patterns | Ideas | Fix picks | Settings | Backup`.
+> - **Settings → "Buttons in {family}"**, one `<details>` per family, grown-up only:
+>   - Each button row shows the emoji and label, plus:
+>     - **Edit:** an inline form with a label input (maxlength 24, required) and an emoji input (maxlength 8). Save calls `renameActivity`; Cancel closes it.
+>     - **Reset:** only shown when `renamed`. Calls `resetActivity`.
+>     - **Remove:** calls `toggleActivityHidden`. Nothing is deleted, so history and patterns keep the button.
+>   - A **"Removed buttons"** list at the bottom of each family, each with **Bring back**.
+>   - The **"Add a button"** form (`addCustomActivity`), as before.
+>   - Keep open `<details>` and the edit form open across re-renders.
+> - **"Fix picks"** sub-tab:
+>   - A date chooser: Today, Yesterday, and the 5 days before, as segmented buttons or a `<select>`.
+>   - Lists that day's picks grouped by family, using `PB.entriesForDate`. Each row shows the emoji, label, and status (🌸 + face if done, or "not done yet"), plus a **Remove** button.
+>   - Remove asks `confirm('Remove "{label}" from {day}? This also removes its flower.')` and then calls `commit(PB.removePick(state, date, fam, act))`.
+>   - Empty day: "No picks on this day."
+>   - Explanation text: "Use this to fix picks added by mistake. {name} can only take back picks that aren't finished yet; finished ones can only be removed here."
+> - **Settings:** the read-aloud checkbox label is **"Sounds & voice"**, with the hint "Reads buttons aloud and plays a happy chime."
+> - Support `?unlock=1&tab=fix` for screenshots.
+
 **Files:**
 - Create: `grownups.js`
 - Modify: `index.html` (add `<script src="grownups.js">` after `app.js`), `styles.css` (grown-up styles)
@@ -1347,7 +1371,8 @@ test('a corrupt remote row is ignored and overwritten by valid local state', asy
         const { data, error } = await client.from(TABLE).select('state').eq('user_id', user.id).maybeSingle();
         if (error) throw error;
         const local = getState();
-        const merged = data && PB.isValidState(data.state) ? PB.mergeStates(local, data.state) : local;
+        const remote = data ? PB.upgradeState(data.state) : null;
+        const merged = remote && PB.isValidState(remote) ? PB.mergeStates(local, remote) : local;
         const { error: upError } = await client.from(TABLE).upsert({ user_id: user.id, state: merged, updated_at: new Date().toISOString() });
         if (upError) throw upError;
         // Merge again with whatever the child did while we were waiting on the network.

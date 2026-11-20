@@ -211,3 +211,55 @@ test('mergeStates: a newer unpick beats an older pick; newer settings win', () =
   assert.equal(PB.mergeStates(old, named).settings.childName, 'Arjun');
   assert.equal(PB.mergeStates(named, old).settings.childName, 'Arjun');
 });
+
+// --- grown-up corrections and button editing
+test('removePick (grown-up) takes away a pick even after it was done; the child can pick it again fresh', () => {
+  let s = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1);
+  s = PB.markDone(s, '2026-11-19', 'move', 'run', 'loved', T1);
+  s = PB.removePick(s, '2026-11-19', 'move', 'run', T2);
+  assert.deepEqual(PB.entriesForDate(s, '2026-11-19'), {});
+  assert.equal(s.entries[0].removed, true);
+  assert.equal(PB.removePick(s, '2026-11-19', 'move', 'run', T2), s);
+  assert.equal(PB.removePick(s, '2026-11-19', 'move', 'swim', T2), s);
+  const T3 = new Date('2026-11-19T17:00:00.000Z');
+  s = PB.pickActivity(s, '2026-11-19', 'move', 'run', T3);
+  assert.deepEqual(PB.entriesForDate(s, '2026-11-19').move.map((e) => [e.activityId, e.doneAt]), [['run', null]]);
+});
+
+test('mergeStates: a stale plain pick never undoes a finished one, but grown-up removals and later re-picks win', () => {
+  const T3 = new Date('2026-11-19T17:00:00.000Z');
+  const done = PB.markDone(PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T1), '2026-11-19', 'move', 'run', 'loved', T1);
+  const stalePick = PB.pickActivity(PB.emptyState(), '2026-11-19', 'move', 'run', T2);
+  assert.equal(PB.entriesForDate(PB.mergeStates(stalePick, done), '2026-11-19').move[0].feeling, 'loved');
+  const removed = PB.removePick(done, '2026-11-19', 'move', 'run', T2);
+  assert.deepEqual(PB.entriesForDate(PB.mergeStates(done, removed), '2026-11-19'), {});
+  assert.deepEqual(PB.entriesForDate(PB.mergeStates(removed, done), '2026-11-19'), {});
+  const repicked = PB.pickActivity(removed, '2026-11-19', 'move', 'run', T3);
+  const merged = PB.entriesForDate(PB.mergeStates(removed, repicked), '2026-11-19');
+  assert.deepEqual(merged.move.map((e) => [e.activityId, e.doneAt]), [['run', null]]);
+});
+
+test('renameActivity changes the name and emoji of built-in and custom buttons; resetActivity undoes it', () => {
+  let s = PB.renameActivity(PB.emptyState(), BASE, 'move', 'run', '  Zoom Run ', '🏎️', T1);
+  s = PB.addCustomActivity(s, BASE, 'move', 'Kite', '🪁', T1);
+  s = PB.renameActivity(s, BASE, 'move', 'custom-kite', 'Big Kite', '', T1); // blank emoji keeps the current one
+  const move = PB.visibleFamilies(BASE, s)[0];
+  assert.deepEqual(move.activities.map((a) => [a.id, a.label, a.emoji, a.renamed]), [
+    ['run', 'Zoom Run', '🏎️', true], ['swim', 'Swim', '🏊', false], ['custom-kite', 'Big Kite', '🪁', true],
+  ]);
+  assert.equal(PB.renameActivity(s, BASE, 'move', 'run', '   ', '🏎️', T2), s);
+  assert.equal(PB.renameActivity(s, BASE, 'move', 'nope', 'X', '', T2), s);
+  s = PB.resetActivity(s, 'move', 'run', T2);
+  assert.equal(PB.visibleFamilies(BASE, s)[0].activities[0].label, 'Run');
+  assert.equal(s.settings.updatedAt, T2.toISOString());
+});
+
+test('upgradeState fills in settings added after a save was made (activityOverrides)', () => {
+  const s = PB.emptyState();
+  delete s.settings.activityOverrides;
+  assert.equal(PB.isValidState(s), false);
+  assert.equal(PB.isValidState(PB.upgradeState(s)), true);
+  const storage = memoryStorage({ [PB.STORAGE_KEY]: JSON.stringify(s) });
+  assert.equal(PB.loadState(storage).recovered, false);
+});
+

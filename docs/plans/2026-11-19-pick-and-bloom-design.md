@@ -80,12 +80,16 @@ The user is a toddler boy who can't read yet, so pictures, sounds and celebratio
   - **Repeat:** one activity is 70% or more of a family's picks over 14 days, plus two alternatives.
   - **Dropped:** picked 3 or more times but finished less than half the time.
   - **Loved:** rated 😄 three or more times.
+- **Fix picks** (amended 2026-11-19): pick a day (from the last 7), see that day's picks, and remove any added by mistake. This works even on finished ones, and also removes the flower. The child can only untap picks that aren't finished yet.
 - **Settings:**
   - Child's name.
-  - Read aloud on or off.
+  - Sounds & voice on or off (read-aloud plus the chime).
   - Show or hide families.
-  - Show or hide buttons.
-  - Add custom buttons.
+  - Buttons, grown-up only (amended 2026-11-19):
+    - **Add** a new button.
+    - **Edit** any button's name or emoji, built-in ones included, with **Reset** to undo.
+    - **Remove** a button. It is hidden from the child, but history keeps it, and **Bring back** restores it.
+  - Learn & Think also has Language, Speaking and Listening.
 - **Backup:** download a JSON file, and restore one. Restoring *adds* what's in the backup and never deletes anything.
 - **Sync:** sign in with email and password, see when it last synced, sync now, sign out.
 

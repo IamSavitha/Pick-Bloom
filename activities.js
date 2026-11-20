@@ -16,6 +16,7 @@
       a('phonics', 'Phonics', '🔤'), a('puzzle', 'Puzzle', '🧩'), a('maze', 'Maze', '🌀'),
       a('lego', 'Lego', '🧱'), a('science', 'Science', '🔬'), a('memory-game', 'Memory Game', '🃏'),
       a('i-spy', 'I Spy', '🔍'), a('storytelling', 'Storytelling', '🗣️'), a('build', 'Build', '🏗️'),
+      a('language', 'Language', '🌐'), a('speaking', 'Speaking', '🎙️'), a('listening', 'Listening', '👂'),
     ] },
     { id: 'create', name: 'Create', color: '#7650a8', light: '#efe2fb', activities: [
       a('draw', 'Draw', '🖍️'), a('color', 'Color', '🎨'), a('paint', 'Paint', '🖌️'),

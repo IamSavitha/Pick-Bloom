@@ -19,7 +19,7 @@
 
   // ---------- shape ----------
   function defaultSettings() {
-    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], updatedAt: EPOCH };
+    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], activityOverrides: {}, updatedAt: EPOCH };
   }
   function emptyState() { return { version: VERSION, settings: defaultSettings(), entries: [] }; }
 
@@ -36,21 +36,37 @@
   function isValidCustom(a) {
     return isObject(a) && isString(a.familyId) && isString(a.id) && isString(a.label) && isString(a.emoji);
   }
+  function isValidOverrides(o) {
+    return isObject(o) && !Array.isArray(o)
+      && Object.values(o).every((v) => isObject(v) && isString(v.label) && isString(v.emoji));
+  }
   function isValidSettings(s) {
     return isObject(s) && isString(s.childName) && typeof s.readAloud === 'boolean'
       && isStringArray(s.hiddenFamilies) && isStringArray(s.hiddenActivities)
-      && Array.isArray(s.customActivities) && s.customActivities.every(isValidCustom) && isString(s.updatedAt);
+      && Array.isArray(s.customActivities) && s.customActivities.every(isValidCustom)
+      && isValidOverrides(s.activityOverrides) && isString(s.updatedAt);
   }
   function isValidState(s) {
     return isObject(s) && s.version === VERSION && isValidSettings(s.settings)
       && Array.isArray(s.entries) && s.entries.every(isValidEntry);
   }
 
-  /** Bring older saved shapes up to date. v1 allowed one pick per family and marked a cleared pick with activityId null. */
+  /**
+   * Bring older saved shapes up to date:
+   * - v1 allowed one pick per family and marked a cleared pick with activityId null;
+   * - settings added later (activityOverrides) get their defaults.
+   */
   function upgradeState(s) {
-    if (!isObject(s) || s.version !== 1 || !Array.isArray(s.entries)) return s;
-    const entries = s.entries.filter((e) => isObject(e) && e.activityId !== null).map((e) => ({ ...e, removed: false }));
-    return { ...s, version: VERSION, entries };
+    if (!isObject(s)) return s;
+    let out = s;
+    if (out.version === 1 && Array.isArray(out.entries)) {
+      const entries = out.entries.filter((e) => isObject(e) && e.activityId !== null).map((e) => ({ ...e, removed: false }));
+      out = { ...out, version: VERSION, entries };
+    }
+    if (out.version === VERSION && isObject(out.settings) && out.settings.activityOverrides === undefined) {
+      out = { ...out, settings: { ...out.settings, activityOverrides: {} } };
+    }
+    return out;
   }
 
   // ---------- storage ----------
@@ -116,6 +132,13 @@
     return putEntry(state, { ...existing, doneAt: iso, feeling, updatedAt: iso });
   }
 
+  /** Grown-up correction: take a pick away even if it was marked done. doneAt is kept so sync sees a newer edit, not a stale pick. */
+  function removePick(state, date, familyId, activityId, now = new Date()) {
+    const existing = findEntry(state, date, familyId, activityId);
+    if (!existing || existing.removed) return state;
+    return putEntry(state, { ...existing, removed: true, updatedAt: now.toISOString() });
+  }
+
   function activeEntries(state) { return state.entries.filter((e) => !e.removed); }
 
   /** familyId -> that day's picks in that family, oldest pick first. */
@@ -165,15 +188,40 @@
     return updateSettings(state, { customActivities: [...state.settings.customActivities, custom] }, now);
   }
 
-  /** All families with custom buttons merged in, each family/activity flagged `hidden`. */
+  function allButtonIds(baseFamilies, state, familyId) {
+    const family = baseFamilies.find((f) => f.id === familyId);
+    if (!family) return [];
+    return [...family.activities.map((x) => x.id),
+      ...state.settings.customActivities.filter((x) => x.familyId === familyId).map((x) => x.id)];
+  }
+
+  /** Grown-up edit of any button's name/emoji (built-in or custom). A blank emoji keeps the current one. */
+  function renameActivity(state, baseFamilies, familyId, activityId, label, emoji, now) {
+    const clean = String(label).trim().slice(0, MAX_LABEL);
+    if (!clean || !allButtonIds(baseFamilies, state, familyId).includes(activityId)) return state;
+    const current = findActivity(familiesWithSettings(baseFamilies, state), familyId, activityId);
+    const overrides = { ...state.settings.activityOverrides,
+      [activityKey(familyId, activityId)]: { label: clean, emoji: String(emoji || '').trim() || current.emoji } };
+    return updateSettings(state, { activityOverrides: overrides }, now);
+  }
+
+  function resetActivity(state, familyId, activityId, now) {
+    const overrides = { ...state.settings.activityOverrides };
+    delete overrides[activityKey(familyId, activityId)];
+    return updateSettings(state, { activityOverrides: overrides }, now);
+  }
+
+  /** All families with custom buttons and renames applied, each family/activity flagged `hidden`. */
   function familiesWithSettings(baseFamilies, state) {
     const s = state.settings;
     return baseFamilies.map((f) => {
       const customs = s.customActivities.filter((x) => x.familyId === f.id)
         .map((x) => ({ id: x.id, label: x.label, emoji: x.emoji, custom: true }));
-      const activities = [...f.activities, ...customs].map((x) => ({
-        custom: false, ...x, hidden: s.hiddenActivities.includes(activityKey(f.id, x.id)),
-      }));
+      const activities = [...f.activities, ...customs].map((x) => {
+        const key = activityKey(f.id, x.id);
+        const override = s.activityOverrides[key];
+        return { custom: false, ...x, ...(override || {}), renamed: !!override, hidden: s.hiddenActivities.includes(key) };
+      });
       return { ...f, hidden: s.hiddenFamilies.includes(f.id), activities };
     });
   }
@@ -207,10 +255,16 @@
   }
 
   // ---------- merge (used by sync and restore) ----------
+  const isPlainPick = (e) => !e.doneAt && !e.removed;
+
+  /** Newer edit wins, except a plain (not done) pick never undoes a finished one: that is just a device that hadn't synced yet. */
   function preferredEntry(a, b) {
-    if (a.doneAt && !b.doneAt) return a;
-    if (b.doneAt && !a.doneAt) return b;
-    return b.updatedAt > a.updatedAt ? b : a;
+    let older = a, newer = b;
+    if (a.updatedAt > b.updatedAt || (a.updatedAt === b.updatedAt && JSON.stringify(a) > JSON.stringify(b))) {
+      older = b; newer = a;
+    }
+    if (older.doneAt && !older.removed && isPlainPick(newer)) return older;
+    return newer;
   }
 
   /** Combine two states without losing information. Order of arguments does not matter for entries. */
@@ -228,8 +282,8 @@
 
   const api = {
     STORAGE_KEY, FEELINGS, dateKey, addDays, daysBetween, emptyState, isValidState, upgradeState, loadState, saveState,
-    pickActivity, unpickActivity, markDone, activeEntries, entriesForDate, activityKey,
-    setChildName, setReadAloud, toggleFamilyHidden, toggleActivityHidden, addCustomActivity,
+    pickActivity, unpickActivity, markDone, removePick, activeEntries, entriesForDate, activityKey,
+    setChildName, setReadAloud, toggleFamilyHidden, toggleActivityHidden, addCustomActivity, renameActivity, resetActivity,
     familiesWithSettings, visibleFamilies, findActivity, exportBackup, importBackup, mergeStates,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;

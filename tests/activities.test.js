@@ -9,8 +9,8 @@ test('has the 12 families from the activity bank, in PDF order', () => {
   ]);
 });
 
-test('activity counts match the PDF', () => {
-  assert.deepEqual(FAMILIES.map((f) => f.activities.length), [12, 12, 12, 12, 12, 10, 10, 8, 10, 10, 12, 8]);
+test('activity counts match the PDF (plus Language, Speaking, Listening in Learn & Think)', () => {
+  assert.deepEqual(FAMILIES.map((f) => f.activities.length), [12, 15, 12, 12, 12, 10, 10, 8, 10, 10, 12, 8]);
 });
 
 test('every family has a name and two hex colors', () => {
