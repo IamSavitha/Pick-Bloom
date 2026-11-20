@@ -69,7 +69,7 @@ button {
 button:active { transform: scale(0.97); }
 button:focus-visible, a:focus-visible { outline: 4px solid var(--ink); outline-offset: 3px; }
 .emoji, .big-emoji { font-size: 34px; line-height: 1; text-transform: none; }
-.label { overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
+.label { max-width: 100%; overflow-wrap: anywhere; -webkit-hyphens: auto; hyphens: auto; }
 
 button.secondary { border-color: #c9bfae; background: var(--card); color: var(--ink); }
 
@@ -132,7 +132,6 @@ button.secondary { border-color: #c9bfae; background: var(--card); color: var(--
   padding: 12px 8px;
 }
 .card-body .big-emoji { font-size: 40px; }
-.card-body .label { font-size: 23px; line-height: 1.1; }
 .card-body .hint { font-size: 19px; font-weight: 700; line-height: 1.15; }
 .plus {
   display: grid;
@@ -147,7 +146,24 @@ button.secondary { border-color: #c9bfae; background: var(--card); color: var(--
 
 .did-it { background: var(--fam); color: #fff; font-size: 19px; }
 
-.family-card.done .family-main { background: var(--card); }
+/* Today's picks inside a card (one or more per family) */
+.picks { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--card);
+  text-align: center;
+}
+.pick .pick-emoji { font-size: 40px; line-height: 1; }
+.pick .label { font-size: 19px; font-weight: 800; text-transform: uppercase; }
+.pick .did-it { align-self: stretch; }
+.pick-done { font-size: 30px; text-align: center; line-height: 1.2; }
+.more { margin: 0 8px 8px; }
+.fam-check { font-weight: 800; }
 .family-card.done .face { font-size: 30px; line-height: 1; }
 
 /* ---------- dialogs ---------- */
@@ -195,6 +211,9 @@ dialog:not([open]) { display: none; }
   min-height: 112px;
   padding: 14px 4px;
 }
+.tile-check { position: absolute; top: 6px; left: 8px; font-size: 20px; line-height: 1; }
+.activity.done { opacity: 0.85; cursor: default; }
+button.primary { background: var(--fam); color: #fff; }
 .activity[aria-pressed="true"] {
   background: var(--fam);
   color: #fff;

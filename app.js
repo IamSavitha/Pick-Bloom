@@ -96,6 +96,7 @@
   const feelingDialog = document.getElementById('feeling');
   let lastDialogShow = 0;
   let lastDialogClose = -Infinity;
+  let pickerFamilyId = null;
   const tooSoonAfterClose = () => performance.now() - lastDialogClose < 400; // swallow a fast second tap
 
   const isOpen = (dialog) => dialog.hasAttribute('open');
@@ -119,46 +120,95 @@
       if (!inside) closeDialog(dialog);
     });
   }
+  // The picker re-renders the grid behind it, so the button that opened it is gone: send focus back to the card.
+  pickerDialog.addEventListener('close', () => {
+    if (pickerFamilyId && !app.contains(document.activeElement)) focusIn(cardSelector(pickerFamilyId));
+  });
 
   function showDialog(dialog, family, title, ...content) {
+    const other = dialog === pickerDialog ? feelingDialog : pickerDialog;
+    closeDialog(other); // never two dialogs at once
     const titleId = dialog.id + '-title';
     dialog.replaceChildren(el('div', { class: 'dialog-inner' }, el('h2', { class: 'dialog-head', id: titleId }, title), ...content));
     dialog.setAttribute('aria-labelledby', titleId);
     for (const [prop, v] of Object.entries(famStyle(family))) dialog.style.setProperty(prop, v);
     if (isOpen(dialog)) return;
     lastDialogShow = performance.now();
-    if (typeof dialog.showModal === 'function') dialog.showModal();
-    else { dialog.classList.add('dialog-fallback'); dialog.setAttribute('open', ''); }
+    if (typeof dialog.showModal === 'function') { dialog.showModal(); return; }
+    // iOS before 15.4: no showModal, so show it as a plain fixed panel.
+    dialog.classList.add('dialog-fallback');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('open', '');
+    const first = dialog.querySelector('button:not([disabled])');
+    if (first) first.focus();
   }
 
-  /** After a choice re-rendered the grid, put focus back on that family's card. */
-  function focusCard(familyId) {
-    const target = app.querySelector(cardSelector(familyId) + ' button') || app.querySelector(cardSelector(familyId));
+  /** After the grid re-rendered, put focus back near what the child just used. */
+  function focusIn(selector) {
+    const scope = app.querySelector(selector);
+    const target = scope && (scope.querySelector('button') || scope);
     if (target) target.focus();
+  }
+  const pickSelector = (familyId, activityId) => `${cardSelector(familyId)} [data-activity="${CSS.escape(activityId)}"]`;
+
+  /** Midnight passed while the page stayed open: close any dialog and show the new day. */
+  function renderIfNewDay() {
+    if (today() === renderedDate) return false;
+    closeDialog(pickerDialog);
+    closeDialog(feelingDialog);
+    render();
+    return true;
+  }
+
+  function findPick(date, familyId, activityId) {
+    return (PB.entriesForDate(state, date)[familyId] || []).find((e) => e.activityId === activityId) || null;
+  }
+
+  /** Show a picker tile as not picked, picked (✓) or done (🌸, can't be unpicked). */
+  function paintTile(tile, entry) {
+    const done = !!(entry && entry.doneAt);
+    tile.setAttribute('aria-pressed', String(!!entry));
+    tile.disabled = done;
+    tile.classList.toggle('picked', !!entry);
+    tile.classList.toggle('done', done);
+    tile.querySelector('.tile-check').textContent = done ? '🌸' : entry ? '✓' : '';
   }
 
   function openPicker(family) {
-    if (tooSoonAfterClose()) return;
+    if (tooSoonAfterClose() || renderIfNewDay()) return;
     const date = today();
-    const entry = PB.entriesForDate(state, date)[family.id] || null;
     const tried = triedKeys();
-    const choose = (fn) => { commit(fn()); closeDialog(pickerDialog); focusCard(family.id); };
-    const buttons = family.activities.map((a) => el('button', {
-      type: 'button', class: 'activity', 'aria-pressed': !!entry && entry.activityId === a.id,
-      onclick: () => { speak(a.label); choose(() => PB.pickActivity(state, date, family.id, a.id)); },
-    },
-    tried.has(PB.activityKey(family.id, a.id)) ? null : el('span', { class: 'badge-new', role: 'img', 'aria-label': 'new', title: 'Never tried yet' }, '✨'),
-    el('span', { class: 'emoji', 'aria-hidden': 'true' }, a.emoji),
-    el('span', { class: 'label' }, a.label)));
+    const lastTap = new Map(); // a toddler double-tap must not pick and then unpick
+    pickerFamilyId = family.id;
+    const tiles = family.activities.map((a) => {
+      const tile = el('button', {
+        type: 'button', class: 'activity', 'data-activity': a.id,
+        onclick: () => {
+          const now = performance.now();
+          if (now - (lastTap.get(a.id) || -Infinity) < 400) return;
+          lastTap.set(a.id, now);
+          const entry = findPick(date, family.id, a.id);
+          if (entry && entry.doneAt) return;
+          if (entry) commit(PB.unpickActivity(state, date, family.id, a.id));
+          else { speak(a.label); commit(PB.pickActivity(state, date, family.id, a.id)); }
+          paintTile(tile, findPick(date, family.id, a.id));
+        },
+      },
+      el('span', { class: 'tile-check', 'aria-hidden': 'true' }),
+      tried.has(PB.activityKey(family.id, a.id)) ? null : el('span', { class: 'badge-new', role: 'img', 'aria-label': 'new', title: 'Never tried yet' }, '✨'),
+      el('span', { class: 'emoji', 'aria-hidden': 'true' }, a.emoji),
+      el('span', { class: 'label' }, a.label));
+      paintTile(tile, findPick(date, family.id, a.id));
+      return tile;
+    });
     showDialog(pickerDialog, family, family.name,
-      el('div', { class: 'activity-grid' }, buttons),
+      el('div', { class: 'activity-grid' }, tiles),
       el('div', { class: 'dialog-foot' },
-        entry ? el('button', { type: 'button', class: 'secondary', onclick: () => choose(() => PB.clearPick(state, date, family.id)) }, 'Clear my pick') : null,
-        el('button', { type: 'button', class: 'secondary', onclick: () => closeDialog(pickerDialog) }, 'Close')));
+        el('button', { type: 'button', class: 'primary', onclick: () => closeDialog(pickerDialog) }, 'Done ✓')));
   }
 
   function openFeeling(family, activity) {
-    if (tooSoonAfterClose()) return;
+    if (tooSoonAfterClose() || renderIfNewDay()) return;
     const date = today(); // the day the child tapped "I did it!", even if midnight passes
     showDialog(feelingDialog, family, `How was ${activity.emoji} ${activity.label}?`,
       el('div', { class: 'feeling-grid' }, PB.FEELINGS.map((feeling) => el('button', {
@@ -166,11 +216,11 @@
         onclick: () => {
           speak(FEELING_TEXT[feeling].text);
           const before = state;
-          commit(PB.markDone(state, date, family.id, feeling));
+          commit(PB.markDone(state, date, family.id, activity.id, feeling));
           closeDialog(feelingDialog);
-          const card = app.querySelector(cardSelector(family.id));
-          if (state !== before && card) card.classList.add('bloom');
-          focusCard(family.id);
+          const row = app.querySelector(pickSelector(family.id, activity.id));
+          if (state !== before && row) row.classList.add('bloom');
+          focusIn(pickSelector(family.id, activity.id));
         },
       }, el('span', { class: 'emoji', 'aria-hidden': 'true' }, FEELING_TEXT[feeling].face), el('span', { class: 'label' }, FEELING_TEXT[feeling].text)))),
       el('div', { class: 'dialog-foot' },
@@ -178,55 +228,55 @@
   }
 
   // ---------- Today ----------
-  function familyCard(family, entry) {
-    const props = { class: 'family-card', 'data-family': family.id, style: famStyle(family) };
-    const name = el('span', { class: 'fam-name' }, family.name);
-    if (!entry) {
+  function pickRow(family, entry, families) {
+    const activity = PB.findActivity(families, family.id, entry.activityId);
+    const feeling = FEELING_TEXT[entry.feeling];
+    return el('li', { class: 'pick' + (entry.doneAt ? ' done' : ''), 'data-activity': entry.activityId, tabindex: entry.doneAt ? '-1' : null },
+      el('span', { class: 'pick-emoji', 'aria-hidden': 'true' }, activity.emoji),
+      el('span', { class: 'label' }, activity.label),
+      entry.doneAt
+        ? el('span', { class: 'pick-done', role: 'img', 'aria-label': feeling ? feeling.text : 'Done' }, '🌸', feeling ? feeling.face : '')
+        : el('button', { type: 'button', class: 'did-it', 'aria-label': `I did it: ${activity.label}`, onclick: () => openFeeling(family, activity) }, 'I did it!'));
+  }
+
+  function familyCard(family, picks, families) {
+    const allDone = picks.length > 0 && picks.every((e) => e.doneAt);
+    const props = { class: 'family-card' + (allDone ? ' all-done' : ''), 'data-family': family.id, style: famStyle(family) };
+    const head = el('span', { class: 'fam-name' }, family.name,
+      allDone ? el('span', { class: 'fam-check', role: 'img', 'aria-label': 'all done' }, ' ✓') : null);
+    if (!picks.length) {
       return el('div', props,
         el('button', { type: 'button', class: 'family-main', onclick: () => openPicker(family) },
-          name,
+          head,
           el('span', { class: 'card-body' },
             el('span', { class: 'plus', 'aria-hidden': 'true' }, '+'),
             el('span', { class: 'hint' }, 'Tap to pick'))));
     }
-    const activity = PB.findActivity(allFams(), family.id, entry.activityId);
-    if (entry.doneAt) {
-      const feeling = FEELING_TEXT[entry.feeling];
-      props.class += ' done';
-      props.tabindex = '-1';
-      return el('div', props,
-        el('div', { class: 'family-main' },
-          name,
-          el('span', { class: 'card-body' },
-            el('span', { class: 'big-emoji', 'aria-hidden': 'true' }, `🌸${activity.emoji}`),
-            el('span', { class: 'label' }, activity.label),
-            el('span', { class: 'face', role: 'img', 'aria-label': feeling ? feeling.text : 'Done' }, feeling ? feeling.face : '✅'))));
-    }
     return el('div', props,
-      el('button', { type: 'button', class: 'family-main', onclick: () => openPicker(family) },
-        name,
-        el('span', { class: 'card-body' },
-          el('span', { class: 'big-emoji', 'aria-hidden': 'true' }, activity.emoji),
-          el('span', { class: 'label' }, activity.label),
-          el('span', { class: 'hint' }, 'tap to change'))),
-      el('button', { type: 'button', class: 'did-it', onclick: () => openFeeling(family, activity) }, 'I did it! ✅'));
+      el('div', { class: 'family-main' },
+        head,
+        el('ul', { class: 'picks' }, picks.map((e) => pickRow(family, e, families))),
+        el('button', { type: 'button', class: 'more', 'aria-label': `Pick more in ${family.name}`, onclick: () => openPicker(family) }, '+ More')));
   }
 
   function todayView() {
     const name = childName();
     const picks = PB.entriesForDate(state, today());
     const families = visible().filter((f) => f.activities.length > 0);
-    const done = families.filter((f) => picks[f.id] && picks[f.id].doneAt).length;
+    const all = allFams();
+    const shown = families.flatMap((f) => picks[f.id] || []);
+    const flowers = shown.filter((e) => e.doneAt).length;
+    const withPick = families.filter((f) => (picks[f.id] || []).length > 0).length;
     return el('section', { class: 'view today' },
       el('h1', null, name ? `Hi ${name}!` : 'Hi there!'),
-      el('p', { class: 'sub' }, 'Pick one from each family'),
-      el('p', { class: 'progress' }, `🌸 ${done} of ${families.length} flowers today`),
-      el('div', { class: 'families' }, families.map((f) => familyCard(f, picks[f.id] || null))));
+      el('p', { class: 'sub' }, 'Pick at least one from each family'),
+      el('p', { class: 'progress' }, `🌸 ${flowers} ${flowers === 1 ? 'flower' : 'flowers'} today · ${withPick} of ${families.length} families`),
+      el('div', { class: 'families' }, families.map((f) => familyCard(f, picks[f.id] || [], all))));
   }
 
   // ---------- Garden ----------
   function doneOn(date) {
-    return Object.values(PB.entriesForDate(state, date))
+    return Object.values(PB.entriesForDate(state, date)).flat()
       .filter((e) => e.doneAt)
       .sort((a, b) => a.doneAt.localeCompare(b.doneAt));
   }
@@ -304,9 +354,6 @@
     }
     document.body.dataset.ready = '1';
   }
-
-  /** Midnight passed while the page stayed open: show the new day. */
-  function renderIfNewDay() { if (today() !== renderedDate) render(); }
 
   window.addEventListener('hashchange', () => {
     closeDialog(pickerDialog);
