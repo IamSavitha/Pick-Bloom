@@ -1178,6 +1178,9 @@ create table if not exists public.pickbloom_state (
 
 alter table public.pickbloom_state enable row level security;
 
+-- Newer Supabase projects don't auto-grant table access to API roles. Signed-in users only; RLS limits them to their own row.
+grant select, insert, update on public.pickbloom_state to authenticated;
+
 create policy "read own state" on public.pickbloom_state
   for select using (auth.uid() = user_id);
 create policy "insert own state" on public.pickbloom_state
@@ -1401,7 +1404,7 @@ test('a corrupt remote row is ignored and overwritten by valid local state', asy
 
 **Step 7: Wire it into the app**
 - **`index.html`**, before `app.js`, in this order:
-  - `<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>`
+  - `<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js"></script>`
   - `<script src="config.js"></script>`
   - `<script src="sync.js"></script>`
   - If the CDN fails (offline or `file://` without network), `window.supabase` is undefined and the app must still work.
