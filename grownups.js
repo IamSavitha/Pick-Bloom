@@ -786,6 +786,16 @@
     if (location.hash === '#grownups') window.PBApp.render();
   }
 
+  function bringBackDevice() {
+    if (!window.PBApp.sync.restoreDeviceFamily()) {
+      announce("This device's earlier children couldn't be brought back.");
+      return;
+    }
+    announce("This device's earlier children are back.");
+    nextFocus = ['gu-sync-email'];
+    window.PBApp.render();
+  }
+
   async function signOut() {
     if (signingOut) return;
     signingOut = true;
@@ -844,7 +854,12 @@
           ? el('p', { class: 'gu-note error', role: 'alert', id: 'gu-sync-error' }, `Couldn't sign in: ${signInError}`)
           : null,
         el('button', { type: 'submit', class: 'primary', id: 'gu-sync-signin', disabled: signingIn }, signingIn ? 'Signing in…' : 'Sign in')),
-      hint('Sign in with the same grown-up account on every device. The child never needs to sign in again on that device.', { class: 'gu-hint sync-foot' })));
+      hint('Sign in with the same grown-up account on every device. The child never needs to sign in again on that device.', { class: 'gu-hint sync-foot' }),
+      sync.hasDeviceFamily()
+        ? el('div', { class: 'sync-device' },
+          hint("This device's own children were kept apart when a login was added. Bringing them back shows them here again; the login's children come back when it signs in.", { class: 'gu-hint' }),
+          el('button', { type: 'button', id: 'gu-sync-device', onclick: bringBackDevice }, "Bring back this device's earlier children"))
+        : null));
   }
 
   // ---------- the view ----------

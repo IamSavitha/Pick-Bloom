@@ -59,6 +59,7 @@ You can also download this folder and double-click `index.html`. It works straig
 - **Sync only happens when you sign in.** Someone who opens the link without signing in never sends anything anywhere: the app only talks to the sync server (Supabase) after a grown-up signs in on that device.
 - **Each login sees only its own data.** The database only lets a signed-in account read and write its own family. Nobody can create an account from the app: logins are made by the app's owner.
 - **Signing out** stops syncing on that device. Everything already saved on the device stays there.
+- **You're asked before a device's children join a login.** The first time someone signs in on a device that already has children with progress, it asks whether to add them to that login. **Cancel** keeps them on the device, apart from the login. After signing out, **Bring back this device's earlier children** in the Sync tab shows them again.
 - **A different login on the same device never mixes families.** If someone else signs in on your device, their own children are shown, and your children are kept safely on the device (never sent to their account). They come back when your login signs in there again.
 - **The app can only talk to its own site and your sync server.** A browser rule in `index.html` (a "Content Security Policy") blocks everything else.
 

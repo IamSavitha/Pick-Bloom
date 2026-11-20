@@ -378,3 +378,77 @@ test('signed in in another tab: this tab starts syncing too (after the callback)
   assert.equal(h.sync.isSignedIn(), true);
   assert.equal(client.db.upserts, 1);
 });
+
+// ---------- a device's own children and the first login ----------
+function claimHarness(answer, { remote, local }) {
+  const client = multiAccountClient(remote ? { u1: remote } : {});
+  const h = accountHarness(client, local);
+  const claims = [];
+  const conflicts = [];
+  let state = local;
+  const infos = [];
+  const sync = createSync({
+    client, storage: h.storage, getState: () => state, setState: (s, info) => { state = s; infos.push(info); return true; }, onStatus() {},
+    onClaimDevice: (q) => { claims.push(q); return answer; },
+    onFirstChildConflict: (q) => { conflicts.push(q); return true; },
+  });
+  return { client, sync, storage: h.storage, claims, conflicts, infos, get state() { return state; }, set state(s) { state = s; } };
+}
+const deviceKids = () => FAM.addChild(named('Sam', T1), 'Mia', '🐰', T1, 'kid-mia');
+const accountKids = () => FAM.addChild(named('Maya', T1), 'Leo', '🦁', T1, 'kid-leo');
+
+test('first login on a device with children: OK adds them to the login and links', async () => {
+  const h = claimHarness(true, { remote: accountKids(), local: deviceKids() });
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.deepEqual(h.claims, [{ names: ['Sam', 'Mia'], email: 'u1@example.com' }]);
+  assert.equal(h.conflicts.length, 1); // then the usual child-1 question (Sam vs Maya)
+  assert.deepEqual(kidNames(h.client.db.rows.u1), kidNames(h.state));
+  assert.ok(kidNames(h.client.db.rows.u1).includes('Mia'));
+  assert.equal(h.storage.data['pickbloom.syncLinked'], 'u1');
+  assert.equal(h.storage.data['pickbloom.v1.device'], undefined);
+});
+
+test('Cancel keeps this device\'s children apart: nothing local is uploaded, the login\'s family is shown', async () => {
+  const h = claimHarness(false, { remote: accountKids(), local: deviceKids() });
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.equal(h.claims.length, 1);
+  assert.equal(h.conflicts.length, 0);            // no child-1 question after Cancel
+  assert.deepEqual(h.client.db.upserts, []);      // the row was already the login's family: nothing uploaded
+  assert.deepEqual(kidNames(h.state), ['Leo', 'Maya']);
+  assert.deepEqual(h.infos.at(-1), { switched: true });
+  assert.equal(h.storage.data['pickbloom.syncLinked'], 'u1');
+  assert.deepEqual(kidNames(JSON.parse(h.storage.data['pickbloom.v1.device'])), ['Mia', 'Sam']);
+  assert.equal(h.sync.switchedAccount(), true);
+  // signed in, the bring-back button isn't offered; once signed out, it is
+  assert.equal(h.sync.hasDeviceFamily(), false);
+  await h.sync.signOut();
+  assert.equal(h.sync.hasDeviceFamily(), true);
+  h.state = picked('calm', 'rest', T2, h.state); // the login's child played while signed out
+  assert.equal(h.sync.restoreDeviceFamily(), true);
+  assert.deepEqual(kidNames(h.state), ['Mia', 'Sam']);
+  assert.equal(h.storage.data['pickbloom.v1.device'], undefined);
+  assert.equal(h.storage.data['pickbloom.syncLinked'], undefined); // the next sign-in asks again
+  assert.deepEqual(kidNames(JSON.parse(h.storage.data['pickbloom.v1.account-u1'])), ['Leo', 'Maya']);
+  // signing in as u1 again: asked again; Cancel keeps them apart and u1's kept family (with that pick) comes back
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.equal(h.claims.length, 2);
+  assert.deepEqual(kidNames(h.state), ['Leo', 'Maya']);
+  assert.ok(PB.entriesForDate(FAM.getChild(h.client.db.rows.u1, FIRST), DAY).calm);
+  assert.ok(!JSON.stringify(h.client.db.rows.u1).includes('Sam'));
+});
+
+test('Cancel with no row yet: a fresh family is uploaded, not this device\'s children', async () => {
+  const h = claimHarness(false, { local: deviceKids() });
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.deepEqual(kidNames(h.client.db.rows.u1), ['child-1']);
+  assert.ok(!JSON.stringify(h.client.db.rows.u1).includes('Sam'));
+});
+
+test('a fresh device (no progress yet) is not asked and simply joins', async () => {
+  const h = claimHarness(false, { remote: accountKids(), local: FAM.emptyFamily() });
+  await h.sync.signIn('u1@example.com', 'x');
+  assert.equal(h.claims.length, 0);
+  assert.deepEqual(kidNames(h.state), ['Leo', 'Maya']);
+  assert.equal(h.storage.data['pickbloom.syncLinked'], 'u1');
+  assert.equal(h.sync.restoreDeviceFamily(), false); // signed in (and nothing kept apart anyway)
+});

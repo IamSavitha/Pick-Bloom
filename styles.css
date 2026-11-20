@@ -1140,5 +1140,8 @@ dialog:not([open]) { display: none; }
 .sync-status.is-synced { background: #eef8e8; color: #1f5a33; }
 .sync-status.is-error { background: #fdecea; color: var(--gu-danger); }
 .gu-note.sync-switched { margin: 0 0 12px; overflow-wrap: anywhere; }
+.sync-device { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--gu-line); }
+.sync-device .gu-hint { margin: 0 0 10px; }
+.grownups .sync-device button { max-width: 100%; text-align: left; }
 .sync-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .grownups .sync-actions button { min-width: 140px; }

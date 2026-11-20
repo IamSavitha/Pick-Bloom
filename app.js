@@ -678,6 +678,9 @@
           getState: () => family,
           setState: (next, info) => replaceFamily(next, { renamed: info && info.renamed, fresh: !!(info && info.switched) }),
           storage, // remembers which account this device has joined, so the question below is asked once
+          // Asked right after a grown-up taps Sign in on a device that already has children with progress.
+          onClaimDevice: ({ names, email }) => window.confirm(
+            `Add this device's children (${names.join(', ')}) to ${email}? OK = yes, they belong to this login. Cancel = keep them separate on this device.`),
           onFirstChildConflict: ({ localName, incomingName }) => window.confirm(
             `Is ${incomingName} the same child as ${localName}? OK = same child (combine). Cancel = different children (keep both).`),
           onStatus: (st) => {

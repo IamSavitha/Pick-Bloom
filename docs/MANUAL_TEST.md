@@ -113,6 +113,7 @@ Go through this on a real **iPad**, **phone** and **laptop** before a release. S
 - [ ] Make different picks on both devices while one is offline. After syncing, both devices show all the picks.
 - [ ] **Sign out:** syncing stops on that device, its data stays, and the other device is still signed in.
 - [ ] Without signing in again, reloading the signed-out device makes no requests to `supabase.co`.
+- [ ] **First login on a device that already has progress:** it asks "Add this device's children (…) to …?". **OK** adds them to the login. On a fresh copy, **Cancel** shows only the login's children and uploads none of the device's. After **Sign out**, "Bring back this device's earlier children" shows them again, and the next sign-in asks again. A brand-new device with no picks isn't asked.
 - [ ] **A different login on the same device:** sign in as login A, sign out, then sign in as login B. The note "This device now shows …'s children" appears, only B's children show, and none of A's children appear on B's other devices. Sign out and back in as A: A's children (including anything picked while signed out) come back.
 - [ ] **Content Security Policy:** with developer tools open, use every screen and download a backup. The console shows no "Content Security Policy" errors.
 
