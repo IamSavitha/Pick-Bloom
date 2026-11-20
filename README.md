@@ -79,6 +79,8 @@ To use it, open **Grown-ups → 🔄 Sync** on each device and sign in with the 
 
 If you're offline, everything keeps working and is saved on the device. It catches up when you're back online.
 
+**"Is Maya the same child as Sam?"** Each device starts with one child. If you set up the iPad for one child and the laptop separately for another, the app can't tell on its own whether they are the same child. So the first time a device joins your account (or when you restore a backup), if the names differ, it asks. **OK** combines them into one child. **Cancel** keeps them as two children. It asks only once per device.
+
 ---
 
 ## Set up your own copy

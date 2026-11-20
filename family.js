@@ -123,6 +123,27 @@
     return { version: FAMILY_VERSION, children };
   }
 
+  // ---------- one child or two? ----------
+  // Every fresh device (and every single-child backup) calls its first child 'child-1'. So the iPad's Sam and
+  // the laptop's Maya would be combined into one child by restore or sync unless a grown-up says otherwise.
+
+  /** { localName, incomingName } when both sides have a different, named, used child-1; otherwise null. */
+  function firstChildConflict(local, incoming) {
+    const a = getChild(local, FIRST_CHILD_ID);
+    const b = getChild(incoming, FIRST_CHILD_ID);
+    if (!a || !b || a.removed || b.removed) return null;
+    const localName = a.settings.childName.trim();
+    const incomingName = b.settings.childName.trim();
+    if (!localName || !incomingName || localName.toLowerCase() === incomingName.toLowerCase()) return null;
+    if (!a.entries.length || !b.entries.length) return null;
+    return { localName, incomingName };
+  }
+
+  /** The same family with its child-1 given a new id, so merging keeps that child separate. */
+  function separateFirstChild(family, newId = randomId()) {
+    return { ...family, children: family.children.map((c) => (c.id === FIRST_CHILD_ID ? { ...c, id: newId } : c)) };
+  }
+
   // ---------- backup ----------
   function exportFamilyBackup(family, now = new Date()) {
     return JSON.stringify({ app: 'pick-and-bloom', exportedAt: now.toISOString(), family }, null, 2);
@@ -143,6 +164,7 @@
   const api = {
     FAMILY_VERSION, FIRST_CHILD_ID, AVATARS, emptyFamily, isValidFamily, upgradeFamily, activeChildren, getChild,
     updateChild, addChild, removeChild, chooseActiveChild, loadFamily, saveFamily, mergeFamilies,
+    firstChildConflict, separateFirstChild, newChildId: randomId,
     exportFamilyBackup, importFamilyBackup,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;

@@ -139,3 +139,39 @@ test('mergeFamilies always leaves at least one active child, even if each device
     assert.equal(typeof FAM.chooseActiveChild(merged, null), 'string');
   }
 });
+
+/** A family whose first child has a name and (optionally) one pick. */
+function firstNamed(name, withPick = true, at = T1) {
+  return FAM.updateChild(FAM.emptyFamily(), FAM.FIRST_CHILD_ID, (c) => {
+    const named = PB.setChildName(c, name, at);
+    return withPick ? PB.pickActivity(named, '2026-11-19', 'move', 'run', at) : named;
+  });
+}
+
+test('firstChildConflict: two different, named, used first children', () => {
+  assert.deepEqual(FAM.firstChildConflict(firstNamed('Sam'), firstNamed('Maya', true, T2)), { localName: 'Sam', incomingName: 'Maya' });
+  // the same name (any case, extra spaces) is the same child
+  assert.equal(FAM.firstChildConflict(firstNamed('Sam'), firstNamed('  sam ')), null);
+  // a nameless or unused side is just a fresh device: nothing to ask
+  assert.equal(FAM.firstChildConflict(firstNamed('Sam'), firstNamed('')), null);
+  assert.equal(FAM.firstChildConflict(firstNamed('Sam'), firstNamed('Maya', false)), null);
+  assert.equal(FAM.firstChildConflict(firstNamed('Sam', false), firstNamed('Maya')), null);
+  assert.equal(FAM.firstChildConflict(FAM.emptyFamily(), firstNamed('Maya')), null);
+  // a removed child-1 on either side is not a conflict
+  const removed = FAM.removeChild(FAM.addChild(firstNamed('Maya'), 'Leo', '🦁', T1, 'kid-l'), FAM.FIRST_CHILD_ID, T2);
+  assert.equal(FAM.firstChildConflict(firstNamed('Sam'), removed), null);
+});
+
+test('separateFirstChild re-ids child-1 and keeps everything else, so a merge keeps both children', () => {
+  const sam = firstNamed('Sam');
+  const maya = FAM.addChild(firstNamed('Maya', true, T2), 'Leo', '🦁', T2, 'kid-l');
+  const apart = FAM.separateFirstChild(maya, 'kid-maya');
+  assert.deepEqual(apart.children.map((c) => c.id), ['kid-maya', 'kid-l']);
+  assert.deepEqual({ ...FAM.getChild(apart, 'kid-maya'), id: FAM.FIRST_CHILD_ID }, FAM.getChild(maya, FAM.FIRST_CHILD_ID));
+  assert.equal(FAM.getChild(maya, FAM.FIRST_CHILD_ID).settings.childName, 'Maya'); // input untouched
+  const merged = FAM.mergeFamilies(sam, apart);
+  assert.deepEqual(FAM.activeChildren(merged).map((c) => c.settings.childName).sort(), ['Leo', 'Maya', 'Sam']);
+  assert.equal(FAM.isValidFamily(merged), true);
+  assert.match(FAM.separateFirstChild(maya).children[0].id, /^child-./);
+  assert.notEqual(FAM.separateFirstChild(maya).children[0].id, FAM.FIRST_CHILD_ID);
+});

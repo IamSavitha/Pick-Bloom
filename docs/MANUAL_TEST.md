@@ -85,6 +85,8 @@ Go through this on a real **iPad**, **phone** and **laptop** before a release. S
 - [ ] In the grown-up corner, the chips switch Patterns, Ideas, Fix picks and Settings to that child.
 - [ ] Edit a child's name and picture. Remove a child (asks first). The last child can't be removed.
 - [ ] Back to one child: no "Who's playing?" and no chip.
+- [ ] In Settings, type a new name for one child, then tap another child's chip straight away. The first child gets the new name; the other child's name is unchanged.
+- [ ] Open the app in two tabs. Pick something in each. Both picks are kept (reload either tab to check).
 
 ## Backup
 
@@ -92,6 +94,7 @@ Go through this on a real **iPad**, **phone** and **laptop** before a release. S
 - [ ] **Restore** that file on another device (or a fresh browser). It asks first, then adds the picks and children. Nothing that was already there is lost.
 - [ ] Restoring the same file twice doesn't create duplicates.
 - [ ] Restoring a junk file (for example, any non-backup `.json` or a photo) shows an error and changes nothing.
+- [ ] On a device whose first child is named Sam, restore a backup from a device whose first child is Maya. It asks "Is Maya the same child as Sam?". **Cancel** keeps two children; on a fresh copy, **OK** combines them into one.
 
 ## Private browsing
 
@@ -105,6 +108,7 @@ Go through this on a real **iPad**, **phone** and **laptop** before a release. S
 - [ ] A wrong password shows "Couldn't sign in: Invalid login credentials".
 - [ ] Sign in on two devices with the same account. Pick on one, and within a minute it appears on the other (or tap **Sync now**).
 - [ ] Add a child on one device. It appears on the other after a sync.
+- [ ] Set up a second device separately with a different first child name, then sign in there. It asks once whether they are the same child. **Cancel** keeps both children on both devices, and the child who was playing on that device is still the one playing.
 - [ ] Go offline on one device, pick and finish something, then come back online. It syncs, and nothing is lost on either device.
 - [ ] Make different picks on both devices while one is offline. After syncing, both devices show all the picks.
 - [ ] **Sign out:** syncing stops on that device, its data stays, and the other device is still signed in.

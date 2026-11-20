@@ -137,32 +137,46 @@
     afterCommit();
   }
 
-  /** Replace the whole family (add/remove/rename a child, restore a backup). Keeps the playing child if still there. */
-  function commitFamily(next) {
-    if (!PB.isValidFamily(next)) return;
+  /** Keeps the playing child if still there (or falls back), and remembers the choice on this device. */
+  function adoptFamily(next, renamed) {
+    const before = activeChildId;
     family = next;
-    activeChildId = PB.chooseActiveChild(family, activeChildId);
+    activeChildId = PB.chooseActiveChild(family, renamed && renamed.from === activeChildId ? renamed.to : activeChildId);
     state = PB.getChild(family, activeChildId);
+    if (activeChildId !== before) remember(activeChildId);
+    return activeChildId !== before;
+  }
+
+  /**
+   * Replace the whole family (add/remove/rename a child, restore a backup).
+   * Returns false if `next` isn't a valid family (nothing changes); true otherwise, including "nothing to change".
+   */
+  function commitFamily(next) {
+    if (next === family) return true;
+    if (!PB.isValidFamily(next)) return false;
+    adoptFamily(next);
     if (!manyKids()) choosing = false;
     saveFamily();
     render();
     afterCommit();
+    return true;
   }
 
-  /** Sync brought in a newer family: take it without starting another sync. Keeps the playing child if still there. */
-  function replaceFamily(next) {
-    if (!PB.isValidFamily(next) || JSON.stringify(next) === JSON.stringify(family)) return; // nothing new: no re-render
+  /**
+   * A newer family came from sync or from another open tab: take it without starting another sync.
+   * `renamed` ({ from, to }) says the playing child got a new id. `save: false` when it is already what's stored.
+   */
+  function replaceFamily(next, { renamed = null, save = true } = {}) {
+    if (!PB.isValidFamily(next)) return false;
+    if (JSON.stringify(next) === JSON.stringify(family)) return true; // nothing new: no re-render
     const hadMany = manyKids();
-    const before = activeChildId;
-    family = next;
-    activeChildId = PB.chooseActiveChild(family, activeChildId);
-    state = PB.getChild(family, activeChildId);
-    if (activeChildId !== before) remember(activeChildId);
-    // A child added (or the playing child removed) on another device: ask "Who's playing?" again.
+    const switched = adoptFamily(next, renamed);
+    // A child added (or the playing child removed) somewhere else: ask "Who's playing?" again.
     if (!manyKids()) choosing = false;
-    else if (!hadMany || activeChildId !== before) choosing = true;
-    saveFamily();
+    else if (!hadMany || switched) choosing = true;
+    if (save) saveFamily();
     render();
+    return true;
   }
 
   function setActiveChild(id) {
@@ -655,7 +669,10 @@
         sync = PB.createSync({
           client,
           getState: () => family,
-          setState: replaceFamily,
+          setState: (next, info) => replaceFamily(next, { renamed: info && info.renamed }),
+          storage, // remembers which account this device has joined, so the question below is asked once
+          onFirstChildConflict: ({ localName, incomingName }) => window.confirm(
+            `Is ${incomingName} the same child as ${localName}? OK = same child (combine). Cancel = different children (keep both).`),
           onStatus: (st) => {
             syncStatus = st;
             try { syncListener(st); } catch (e) { /* the grown-up corner's display only */ }
@@ -677,6 +694,17 @@
     window.addEventListener('online', syncQuietly);
     setInterval(() => { if (document.visibilityState === 'visible') syncQuietly(); }, 60000);
   }
+
+  // Another tab (or an old copy of the app) saved: combine, so two open tabs never overwrite each other.
+  window.addEventListener('storage', (event) => {
+    if (event.key !== PB.STORAGE_KEY || !event.newValue) return;
+    try {
+      const incoming = PB.upgradeFamily(JSON.parse(event.newValue));
+      if (!PB.isValidFamily(incoming)) return;
+      const merged = PB.mergeFamilies(family, incoming);
+      replaceFamily(merged, { save: JSON.stringify(merged) !== JSON.stringify(incoming) });
+    } catch (e) { /* not ours to fix: keep what this tab has */ }
+  });
 
   window.PBApp = {
     getState: () => state,

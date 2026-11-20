@@ -99,6 +99,7 @@
   }
   const clearDrafts = (...ids) => ids.forEach((id) => { delete drafts[id]; });
   const clearAllDrafts = () => clearDrafts(...Object.keys(drafts));
+  const PER_CHILD_DRAFT = /^gu-(name$|edit-|add-)/;
 
   // ---------- small shared pieces ----------
   const dot = (f) => el('span', { class: 'gu-dot', style: famStyle(f), 'aria-hidden': 'true' });
@@ -256,7 +257,9 @@
       if (child.id === activeId) return;
       editing = null;
       editingKid = null;
-      for (const id of Object.keys(drafts)) delete drafts[id]; // typing belongs to the child it was typed for
+      // Typing for one child (name, button edits, new buttons) belongs to that child. Family-wide drafts
+      // ("Add a child", the sync email) stay.
+      clearDrafts(...Object.keys(drafts).filter((id) => PER_CHILD_DRAFT.test(id)));
       nextFocus = ['gu-kid-' + child.id];
       announce(`Showing ${kidName(child)}`);
       window.PBApp.setActiveChild(child.id);
@@ -438,12 +441,17 @@
   }
 
   // ---------- Settings ----------
+  /**
+   * Saves after the tap is over, so it must name the child it was typed for: the tap may have been on another
+   * child's chip, which switches the child shown before this runs.
+   */
   function saveName(value) {
+    const id = window.PBApp.activeChildId();
     whenTapEnds(() => {
-      clearDrafts('gu-name');
-      const state = S();
-      if (String(value).trim().slice(0, 30) === state.settings.childName) return;
-      apply(PB.setChildName(state, value));
+      if (window.PBApp.activeChildId() === id) clearDrafts('gu-name');
+      const child = PB.getChild(F(), id);
+      if (!child || child.removed || String(value).trim().slice(0, 30) === child.settings.childName) return;
+      window.PBApp.commitFamily(PB.updateChild(F(), id, (c) => PB.setChildName(c, value)));
     });
   }
 
@@ -717,9 +725,18 @@
       rerender(['gu-restore']);
       return;
     }
+    // Every device's first child shares one id: if the names differ, ask before combining two children into one.
+    let incoming = result.family;
+    const conflict = PB.firstChildConflict(F(), incoming);
+    if (conflict && !window.confirm(`Is ${conflict.incomingName} the same child as ${conflict.localName}? OK = same child (combine). Cancel = different children (keep both).`)) {
+      incoming = PB.separateFirstChild(incoming);
+    }
     backupNote = { kind: 'ok', where: 'restore', text: 'Backup restored ✓' };
     nextFocus = ['gu-restore'];
-    window.PBApp.commitFamily(PB.mergeFamilies(F(), result.family));
+    if (!window.PBApp.commitFamily(PB.mergeFamilies(F(), incoming))) {
+      backupNote = { kind: 'error', where: 'restore', text: "This backup couldn't be added. Nothing on this device was changed." };
+      rerender(['gu-restore']);
+    }
   }
 
   function backupTab() {

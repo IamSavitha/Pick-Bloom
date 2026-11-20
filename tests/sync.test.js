@@ -182,3 +182,85 @@ test('a corrupt remote row is ignored and overwritten by valid local state', asy
   await h.sync.start();
   assert.deepEqual(client.db.row.state, local);
 });
+
+// ---------- the first child on a device joining an account ----------
+function named(name, at) {
+  return FAM.updateChild(FAM.emptyFamily(), FIRST, (c) => PB.pickActivity(PB.setChildName(c, name, at), DAY, 'move', 'run', at));
+}
+function memoryStorage() {
+  const data = {};
+  return { data, getItem: (k) => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = String(v); } };
+}
+function conflictHarness(answer, { storage = memoryStorage() } = {}) {
+  const client = fakeClient({ remote: named('Sam', T1) }); // the account already holds the iPad's Sam
+  let state = named('Maya', T2);                           // this laptop was set up separately for Maya
+  const asked = [];
+  const infos = [];
+  const sync = createSync({
+    client, storage, getState: () => state,
+    setState: (s, info) => { state = s; infos.push(info); return true; },
+    onStatus() {},
+    onFirstChildConflict: async (c) => { asked.push(c); return answer; },
+  });
+  return { client, sync, asked, infos, storage, get state() { return state; } };
+}
+
+test('first sync on a new device: "same child" combines the two first children', async () => {
+  const h = conflictHarness(true);
+  await h.sync.start();
+  assert.deepEqual(h.asked, [{ localName: 'Maya', incomingName: 'Sam' }]);
+  assert.deepEqual(FAM.activeChildren(h.state).map((c) => c.id), [FIRST]);
+  assert.equal(first(h.state).settings.childName, 'Maya'); // newer name wins, as with any setting
+  assert.deepEqual(h.infos.at(-1), {});
+  assert.equal(h.storage.data['pickbloom.syncLinked'], 'u1');
+});
+
+test('first sync on a new device: "different children" keeps both, and this device\'s child gets the new id', async () => {
+  const h = conflictHarness(false);
+  await h.sync.start();
+  assert.equal(h.asked.length, 1);
+  const kids = FAM.activeChildren(h.state);
+  assert.deepEqual(kids.map((c) => c.settings.childName).sort(), ['Maya', 'Sam']);
+  assert.equal(first(h.state).settings.childName, 'Sam'); // the account's child-1 keeps its id on every device
+  const maya = kids.find((c) => c.settings.childName === 'Maya');
+  assert.notEqual(maya.id, FIRST);
+  assert.equal(PB.entriesForDate(maya, DAY).move[0].activityId, 'run');
+  assert.deepEqual(h.infos.at(-1), { renamed: { from: FIRST, to: maya.id } });
+  assert.deepEqual(h.client.db.row.state, h.state);
+  // later syncs don't ask again and don't split anything further
+  await h.sync.syncNow();
+  assert.equal(h.asked.length, 1);
+  assert.equal(FAM.activeChildren(h.state).length, 2);
+});
+
+test('the question is asked once per account per device (remembered in storage)', async () => {
+  const storage = memoryStorage();
+  storage.setItem('pickbloom.syncLinked', 'u1');
+  const h = conflictHarness(false, { storage });
+  await h.sync.start();
+  assert.equal(h.asked.length, 0);
+  assert.deepEqual(FAM.activeChildren(h.state).map((c) => c.id), [FIRST]);
+});
+
+test('no question when the first children have the same name, and none by default', async () => {
+  const client = fakeClient({ remote: named('sam', T1) });
+  let asked = 0;
+  let state = named('Sam ', T2);
+  const sync = createSync({ client, getState: () => state, setState: (s) => { state = s; }, onStatus() {}, onFirstChildConflict: () => { asked += 1; return false; } });
+  await sync.start();
+  assert.equal(asked, 0);
+  // without a callback, a conflict is treated as the same child (the old behavior)
+  const c2 = fakeClient({ remote: named('Sam', T1) });
+  let s2 = named('Maya', T2);
+  await createSync({ client: c2, getState: () => s2, setState: (s) => { s2 = s; }, onStatus() {} }).start();
+  assert.deepEqual(FAM.activeChildren(s2).map((c) => c.id), [FIRST]);
+});
+
+test('if the app refuses the synced family, the status is an error (not "synced")', async () => {
+  const client = fakeClient({ remote: picked('move', 'run', T1) });
+  const statuses = [];
+  let state = picked('calm', 'rest', T2);
+  const sync = createSync({ client, getState: () => state, setState: () => false, onStatus: (s) => statuses.push(s) });
+  await sync.start();
+  assert.equal(statuses.at(-1).kind, 'error');
+});
