@@ -127,3 +127,15 @@ test('family backups round-trip, and old single-child backups import as the firs
   assert.equal(FAM.importFamilyBackup('nope').ok, false);
   assert.match(FAM.importFamilyBackup('{"app":"pick-and-bloom","state":{}}').error, /not a Pick&Bloom backup/);
 });
+
+test('mergeFamilies always leaves at least one active child, even if each device removed a different one', () => {
+  const T3 = new Date('2026-11-19T17:00:00.000Z');
+  const base = FAM.addChild(FAM.emptyFamily(), 'Maya', '🐰', T1, 'kid-b');
+  const a = FAM.removeChild(base, 'kid-b', T2);
+  const b = FAM.removeChild(base, FAM.FIRST_CHILD_ID, T3);
+  for (const merged of [FAM.mergeFamilies(a, b), FAM.mergeFamilies(b, a)]) {
+    assert.equal(FAM.isValidFamily(merged), true);
+    assert.deepEqual(FAM.activeChildren(merged).map((c) => c.id), ['kid-b']); // most recently created comes back
+    assert.equal(typeof FAM.chooseActiveChild(merged, null), 'string');
+  }
+});

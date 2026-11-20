@@ -114,7 +114,12 @@
       byId.set(c.id, { ...PB.mergeStates(prev, c), id: c.id, removed: prev.removed || c.removed ? newer.removed : false,
         createdAt: prev.createdAt < c.createdAt ? prev.createdAt : c.createdAt, updatedAt: newer.updatedAt });
     }
-    const children = [...byId.values()].sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id));
+    let children = [...byId.values()].sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id));
+    // Two devices may each have removed a different child. Never end with nobody: bring back the newest child.
+    if (children.length && children.every((c) => c.removed)) {
+      const last = children[children.length - 1];
+      children = children.map((c) => (c === last ? { ...c, removed: false } : c));
+    }
     return { version: FAMILY_VERSION, children };
   }
 
