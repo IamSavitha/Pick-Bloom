@@ -155,8 +155,8 @@
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       audio = audio || new AudioCtx();
-      if (audio.state === 'suspended') audio.resume();
-      const start = audio.currentTime + 0.03;
+      if (audio.state !== 'running') audio.resume(); // iOS reports 'interrupted' after a lock or background
+      const start = audio.currentTime + 0.9; // after the spoken "Yay!" has started, so they don't overlap
       [523.25, 659.25, 783.99].forEach((freq, i) => {
         const osc = audio.createOscillator();
         const gain = audio.createGain();
@@ -278,6 +278,8 @@
     tile.classList.toggle('picked', !!entry);
     tile.classList.toggle('done', done);
     tile.querySelector('.tile-check').textContent = done ? '🌸' : entry ? '✓' : '';
+    const isNew = tile.querySelector('.badge-new');
+    if (isNew) isNew.hidden = !!entry; // tried now, so no longer "new"
   }
 
   function openPicker(family) {
@@ -327,6 +329,7 @@
           if (state !== before) {
             chime();
             speak('Yay! ' + FEELING_TEXT[feeling].text);
+            announce.textContent = `Flower grown: ${activity.label}`;
             celebrate();
             if (row) row.classList.add('bloom');
           }
@@ -383,7 +386,7 @@
         el('div', { class: 'hello-text' },
           el('h1', null, name ? `Hi ${name}!` : 'Hi there!'),
           el('p', { class: 'bubble' }, 'Pick at least one from each family!'))),
-      el('p', { class: 'progress' }, `🌸 ${flowers} ${flowers === 1 ? 'flower' : 'flowers'} today · ${withPick} of ${families.length} families`),
+      el('p', { class: 'progress' }, `🌸 ${flowers} ${flowers === 1 ? 'flower' : 'flowers'} today · ${withPick} of ${families.length} ${families.length === 1 ? 'family' : 'families'}`),
       el('div', { class: 'families' }, families.map((f) => familyCard(f, picks[f.id] || [], all))));
   }
 
@@ -428,11 +431,11 @@
       el('div', { class: 'garden-title' },
         el('div', { class: 'buddy' }, sproutSvg(todays.length ? 'cheer' : 'wave')),
         el('h1', null, name ? `${name}'s garden` : 'My garden')),
-      el('section', { class: 'garden-scene', 'aria-label': 'Today' },
+      el('section', { class: 'garden-scene', 'aria-labelledby': 'garden-today' },
         el('span', { class: 'sun', 'aria-hidden': 'true' }),
         el('span', { class: 'cloud cloud-1', 'aria-hidden': 'true' }),
         el('span', { class: 'cloud cloud-2', 'aria-hidden': 'true' }),
-        el('h2', null, 'Today'),
+        el('h2', { id: 'garden-today' }, 'Today'),
         todays.length
           ? el('div', { class: 'flowers' }, todays.map((e, i) => flowerFor(e, families, false, i)))
           : el('p', { class: 'waiting' }, 'Your garden is waiting for its first flower! 🌱'),
@@ -451,6 +454,8 @@
   // ---------- render ----------
   const banner = document.getElementById('banner');
   const app = document.getElementById('app');
+  const announce = document.getElementById('announce');
+  let renderedView = null; // animations (Sprout's wave, flowers growing) play only when the view changes
   const builders = { today: todayView, garden: gardenView, grownups: grownupsView };
   let renderedDate = null;
 
@@ -466,6 +471,8 @@
     }
     const view = currentView();
     renderedDate = today();
+    app.toggleAttribute('data-animate', view !== renderedView);
+    renderedView = view;
     app.replaceChildren((views[view] || builders[view])());
     for (const link of document.querySelectorAll('.tabs a')) {
       if (link.getAttribute('href') === '#' + view) link.setAttribute('aria-current', 'page');
