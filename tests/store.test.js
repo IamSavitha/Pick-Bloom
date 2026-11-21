@@ -298,3 +298,129 @@ test('mergeStates keeps grown-up-added buttons and renames from both sides even 
     assert.equal(PB.isValidState(merged), true);
   }
 });
+
+// --- families a grown-up adds, renames and removes
+test('addCustomFamily adds a family with a unique id and a palette color; blank names are ignored', () => {
+  let s = PB.emptyState();
+  assert.equal(PB.addCustomFamily(s, BASE, '   ', 'blue', T1), s);
+  s = PB.addCustomFamily(s, BASE, 'Kind Hands', 'blue', T1);
+  s = PB.addCustomFamily(s, BASE, 'Kind Hands', 'nope', T2); // unknown color falls back to the palette
+  const fams = PB.familiesWithSettings(BASE, s);
+  assert.deepEqual(fams.map((f) => f.id), ['move', 'calm', 'custom-kind-hands', 'custom-kind-hands-2']);
+  const added = fams[2];
+  assert.equal(added.name, 'Kind Hands');
+  assert.equal(added.custom, true);
+  assert.equal(added.color, '#1f6aa5');
+  assert.deepEqual(added.activities, []);
+  assert.equal(fams[0].custom, false);
+  assert.ok(PB.isValidState(s));
+});
+
+test('a new family takes buttons, can be picked and finished, renamed, reset and hidden', () => {
+  let s = PB.addCustomFamily(PB.emptyState(), BASE, 'Kind Hands', 'pink', T1);
+  s = PB.addCustomActivity(s, BASE, 'custom-kind-hands', 'Hug', '🤗', T1);
+  const fam = PB.visibleFamilies(BASE, s).find((f) => f.id === 'custom-kind-hands');
+  assert.deepEqual(fam.activities.map((a) => a.label), ['Hug']);
+  const act = fam.activities[0].id;
+  s = PB.pickActivity(s, '2026-11-19', 'custom-kind-hands', act, T1);
+  s = PB.markDone(s, '2026-11-19', 'custom-kind-hands', act, 'loved', T2);
+  assert.equal(PB.rewardTotal(s.entries), 1);
+
+  s = PB.renameFamily(s, BASE, 'custom-kind-hands', '  Helping  ', T2);
+  s = PB.renameFamily(s, BASE, 'move', 'Wiggle', T2);
+  assert.equal(PB.renameFamily(s, BASE, 'nope', 'X', T2), s);
+  assert.equal(PB.renameFamily(s, BASE, 'move', '  ', T2), s);
+  let fams = PB.familiesWithSettings(BASE, s);
+  assert.equal(fams.find((f) => f.id === 'custom-kind-hands').name, 'Helping');
+  assert.equal(fams.find((f) => f.id === 'move').name, 'Wiggle');
+  assert.equal(fams.find((f) => f.id === 'move').renamed, true);
+  s = PB.resetFamily(s, 'move', T2);
+  assert.equal(PB.familiesWithSettings(BASE, s).find((f) => f.id === 'move').name, 'Move My Body');
+
+  s = PB.toggleFamilyHidden(s, 'custom-kind-hands', T2);
+  assert.ok(!PB.visibleFamilies(BASE, s).some((f) => f.id === 'custom-kind-hands'));
+  assert.equal(PB.rewardTotal(s.entries), 1, 'hiding a family keeps what was earned');
+  assert.ok(PB.isValidState(s));
+});
+
+test('a custom family id never collides with a built-in one', () => {
+  const base = [...BASE, { id: 'custom-art', name: 'Art', color: '#000000', light: '#ffffff', activities: [] }];
+  const s = PB.addCustomFamily(PB.emptyState(), base, 'Art', 'green', T1);
+  assert.equal(s.settings.customFamilies[0].id, 'custom-art-2');
+});
+
+// --- reward counts
+test('reward counts: 1 by default, a family count, and a button count that beats its family', () => {
+  let s = PB.emptyState();
+  assert.equal(PB.pointsFor(s, 'move', 'run'), 1);
+  s = PB.setRewardPoints(s, 'move', 2, T1);
+  s = PB.setRewardPoints(s, 'move/swim', 3, T1);
+  assert.equal(PB.pointsFor(s, 'move', 'run'), 2);
+  assert.equal(PB.pointsFor(s, 'move', 'swim'), 3);
+  assert.equal(PB.pointsFor(s, 'calm', 'rest'), 1);
+  const move = PB.familiesWithSettings(BASE, s).find((f) => f.id === 'move');
+  assert.equal(move.points, 2);
+  assert.deepEqual(move.activities.map((a) => [a.id, a.points, a.ownPoints]), [['run', 2, false], ['swim', 3, true]]);
+  // invalid counts are ignored; null clears back to the family
+  assert.equal(PB.setRewardPoints(s, 'move', 0, T2), s);
+  assert.equal(PB.setRewardPoints(s, 'move', 6, T2), s);
+  assert.equal(PB.setRewardPoints(s, 'move', 1.5, T2), s);
+  s = PB.setRewardPoints(s, 'move/swim', null, T2);
+  assert.equal(PB.pointsFor(s, 'move', 'swim'), 2);
+  assert.ok(PB.isValidState(s));
+});
+
+test('finishing keeps the count it earned, even if a grown-up changes the count later', () => {
+  let s = PB.setRewardPoints(PB.emptyState(), 'move/run', 3, T1);
+  s = PB.pickActivity(s, '2026-11-19', 'move', 'run', T1);
+  s = PB.pickActivity(s, '2026-11-19', 'calm', 'rest', T1);
+  s = PB.markDone(s, '2026-11-19', 'move', 'run', 'loved', T2);
+  s = PB.markDone(s, '2026-11-19', 'calm', 'rest', 'okay', T2);
+  assert.equal(PB.rewardTotal(s.entries), 4);
+  s = PB.setRewardPoints(s, 'move/run', 1, T2);
+  assert.equal(PB.rewardTotal(s.entries), 4, 'earned stays earned');
+  s = PB.removePick(s, '2026-11-19', 'move', 'run', T2);
+  assert.equal(PB.rewardTotal(s.entries), 1, 'a grown-up removal takes its rewards away');
+});
+
+test('entries saved before counts existed earn 1, and a bad count makes a save invalid', () => {
+  const entry = { date: '2026-11-19', familyId: 'move', activityId: 'run', pickedAt: T1.toISOString(),
+    doneAt: T2.toISOString(), feeling: 'okay', removed: false, updatedAt: T2.toISOString() };
+  const s = { ...PB.emptyState(), entries: [entry] };
+  assert.ok(PB.isValidState(s));
+  assert.equal(PB.entryPoints(entry), 1);
+  assert.equal(PB.rewardTotal(s.entries), 1);
+  assert.equal(PB.isValidState({ ...s, entries: [{ ...entry, points: 9 }] }), false);
+  const badSettings = { ...s, settings: { ...s.settings, rewardPoints: { move: 'lots' } } };
+  assert.equal(PB.isValidState(badSettings), false);
+  const badColor = { ...s, settings: { ...s.settings, customFamilies: [{ id: 'custom-x', name: 'X', color: 'red;}', light: '#ffffff' }] } };
+  assert.equal(PB.isValidState(badColor), false);
+});
+
+test('upgradeState fills in customFamilies, familyOverrides and rewardPoints for older saves', () => {
+  const s = PB.emptyState();
+  const old = { ...s, settings: { ...s.settings } };
+  delete old.settings.customFamilies;
+  delete old.settings.familyOverrides;
+  delete old.settings.rewardPoints;
+  assert.equal(PB.isValidState(old), false);
+  const up = PB.upgradeState(old);
+  assert.ok(PB.isValidState(up));
+  assert.deepEqual([up.settings.customFamilies, up.settings.familyOverrides, up.settings.rewardPoints], [[], {}, {}]);
+});
+
+test('mergeStates keeps families added on either device; reward counts follow the newer settings', () => {
+  let a = PB.addCustomFamily(PB.emptyState(), BASE, 'Kind Hands', 'pink', T1);
+  a = PB.setRewardPoints(a, 'move', 3, T1);
+  let b = PB.addCustomFamily(PB.emptyState(), BASE, 'Music', 'blue', T2);
+  b = PB.renameFamily(b, BASE, 'calm', 'Quiet', T2);
+  const m = PB.mergeStates(a, b);
+  assert.deepEqual(m.settings.customFamilies.map((f) => f.id).sort(), ['custom-kind-hands', 'custom-music']);
+  assert.equal(m.settings.familyOverrides.calm.name, 'Quiet');
+  assert.deepEqual(m.settings.rewardPoints, {}, 'b is newer, so its counts win');
+  assert.ok(PB.isValidState(m));
+  // points on entries survive merging
+  let c = PB.setRewardPoints(PB.emptyState(), 'move', 2, T1);
+  c = PB.markDone(PB.pickActivity(c, '2026-11-19', 'move', 'run', T1), '2026-11-19', 'move', 'run', 'loved', T2);
+  assert.equal(PB.rewardTotal(PB.mergeStates(PB.emptyState(), c).entries), 2);
+});

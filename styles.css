@@ -322,6 +322,9 @@ button.family-main:active { transform: scale(0.95) translateY(3px); box-shadow: 
 .did-it:active { transform: scale(0.95) translateY(2px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2); }
 .pick-done { font-size: 34px; line-height: 1.2; letter-spacing: 2px; }
 .pick.done { background: #fffdf7; box-shadow: inset 0 0 0 2px var(--fam-light); }
+/* how many rewards an activity earns, when a grown-up set more than one */
+.pick-worth, .tile-worth { font-size: 18px; line-height: 1.2; letter-spacing: 1px; }
+.pick-done { overflow-wrap: anywhere; }
 .more {
   margin: 8px 6px 6px;
   min-height: 64px;
@@ -382,6 +385,7 @@ dialog:not([open]) { display: none; }
 .activity:active:not(:disabled) { transform: scale(0.95) translateY(2px); box-shadow: 0 1px 0 var(--fam); }
 .activity .emoji { font-size: 56px; }
 .activity .label { font-size: 19px; }
+@media (max-width: 360px) { .tile-worth { font-size: 15px; } }
 .activity.picked { background: var(--fam); color: #fff; font-weight: 700; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25); }
 .activity.picked .emoji { margin: -6px 0; padding: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.92); }
 .activity.done { background: var(--card); color: var(--fam-ink, var(--fam)); box-shadow: none; border-style: dashed; cursor: default; }
@@ -464,6 +468,17 @@ dialog:not([open]) { display: none; }
   background: #fff;
   color: #2f6b2a;
   font-size: clamp(30px, 8vmin, 48px);
+  font-weight: 700;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.yay-count {
+  margin-top: 8px;
+  padding: 4px 18px;
+  border-radius: 999px;
+  background: #fff;
+  color: #2f6b2a;
+  font-size: clamp(24px, 6vmin, 36px);
   font-weight: 700;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
 }
@@ -555,6 +570,24 @@ dialog:not([open]) { display: none; }
   background: radial-gradient(circle at 20px 18px, #86d063 18px, transparent 19px) 0 0 / 40px 18px repeat-x;
 }
 .flower { margin: 0; width: 88px; text-align: center; transform-origin: 50% 100%; }
+.flower, .mini-flower { position: relative; }
+.mini-flower { display: inline-block; }
+/* "×3" on a reward that counted more than once */
+.reward-times {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.mini-flower .reward-times { top: -2px; right: -4px; padding: 0 4px; font-size: 11px; }
 @media (prefers-reduced-motion: no-preference) {
   [data-animate] .flower { animation: grow 600ms cubic-bezier(0.3, 1.5, 0.5, 1) both; animation-delay: calc(var(--i, 0) * 90ms); }
 }
@@ -1033,13 +1066,29 @@ dialog:not([open]) { display: none; }
 .reward-tile.selected .reward-name { color: #1f5a33; font-weight: 700; }
 .reward-tile:has(:focus-visible) { outline: 3px solid var(--ink); outline-offset: 2px; }
 @supports not selector(:has(*)) { .reward-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; } }
-.gu-fams { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: 0 10px; }
-@media (min-width: 600px) { .gu-fams { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
-.gu-fams .gu-check { gap: 8px; font-size: 16px; line-height: 1.2; }
-.gu-fams input[type="checkbox"] { accent-color: var(--fam); }
-@media (max-width: 599px) { .gu-fams .gu-dot { display: none; } }
-.fam-check-row { align-items: center; }
-.fam-check-row input[type="checkbox"] { margin: 0; }
+/* how many rewards a family or button earns */
+.pts-field { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.grownups select {
+  min-height: 40px;
+  max-width: 100%;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--card);
+  border: 2px solid #d9cdb9;
+  border-radius: 10px;
+}
+.grownups select:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.fam-edit-row .gu-dot { flex: 0 0 auto; }
+/* color swatches for a new family */
+.color-pick { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.color-pick legend { margin-bottom: 4px; padding: 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+.color-tile { display: grid; place-items: center; width: 44px; height: 44px; border: 2px solid transparent; border-radius: 50%; cursor: pointer; }
+.color-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--fam); box-shadow: inset 0 0 0 5px var(--fam-light); }
+.color-tile.selected { border-color: var(--ink); }
+.color-tile:has(:focus-visible) { outline: 3px solid var(--ink); outline-offset: 2px; }
+@supports not selector(:has(*)) { .color-tile:focus-within { outline: 3px solid var(--ink); outline-offset: 2px; } }
 .gu-btn-families { display: flex; flex-direction: column; gap: 8px; }
 .btn-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .btn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-bottom: 1px solid var(--gu-soft); }

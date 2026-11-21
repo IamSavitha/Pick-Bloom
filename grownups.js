@@ -28,6 +28,7 @@
   let fixOffset = 0;           // 0 = today, 1 = yesterday, ... 6
   let editing = null;          // "familyId/activityId" of the button being edited
   let editingKid = null;       // id of the child whose name/picture is being edited
+  let editingFam = null;       // id of the family being renamed
   let backupNote = null;       // { kind: 'ok' | 'error', text }
   let signingIn = false;       // a sign-in is on its way to the server
   let signingOut = false;
@@ -99,7 +100,7 @@
   }
   const clearDrafts = (...ids) => ids.forEach((id) => { delete drafts[id]; });
   const clearAllDrafts = () => clearDrafts(...Object.keys(drafts));
-  const PER_CHILD_DRAFT = /^gu-(name$|edit-|add-)/;
+  const PER_CHILD_DRAFT = /^gu-(name$|edit-|add-|fam-)/;
 
   // ---------- small shared pieces ----------
   const dot = (f) => el('span', { class: 'gu-dot', style: famStyle(f), 'aria-hidden': 'true' });
@@ -198,6 +199,7 @@
     cancelHold();
     editing = null;
     editingKid = null;
+    editingFam = null;
     backupNote = null;
     signInError = null;
     clearAllDrafts();
@@ -257,6 +259,7 @@
       if (child.id === activeId) return;
       editing = null;
       editingKid = null;
+      editingFam = null;
       // Typing for one child (name, button edits, new buttons) belongs to that child. Family-wide drafts
       // ("Add a child", the sync email) stay.
       clearDrafts(...Object.keys(drafts).filter((id) => PER_CHILD_DRAFT.test(id)));
@@ -294,7 +297,7 @@
     const all = PB.familiesWithSettings(PB.FAMILIES, state);
     const ranged = PB.entriesInRange(state.entries, now, rangeDays);
     const reward = PB.rewardOf(state);
-    const finished = ranged.filter((e) => e.doneAt).length;
+    const finished = PB.rewardTotal(ranged);
     const v = PB.variety(state.entries, fams);
     const inRange = PB.familyStats(ranged, fams, now);
     const ever = PB.familyStats(state.entries, fams, now);
@@ -407,7 +410,9 @@
 
     function remove(family, entry, activity) {
       const day = longDay(date, fixOffset);
-      if (!window.confirm(`Remove "${activity.label}" from ${day}? This also removes its ${reward.one}.`)) return;
+      const n = PB.entryPoints(entry);
+      const what = entry.doneAt ? ` This also removes its ${n === 1 ? reward.one : `${n} ${reward.many}`}.` : '';
+      if (!window.confirm(`Remove "${activity.label}" from ${day}?${what}`)) return;
       const i = removeIds.indexOf(btnId('rm', family.id, entry.activityId));
       nextFocus = [removeIds[i + 1], removeIds[i - 1], 'gu-day-' + fixOffset].filter(Boolean);
       announce(`Removed ${activity.label} from ${day}`);
@@ -432,7 +437,8 @@
                   el('span', { class: 'fix-emoji', 'aria-hidden': 'true' }, activity.emoji),
                   el('span', { class: 'fix-label' }, activity.label),
                   entry.doneAt
-                    ? el('span', { class: 'fix-status done' }, el('span', { 'aria-hidden': 'true' }, reward.emoji + (feeling ? ' ' + feeling.face : '')), ' ', feeling ? feeling.text : 'Done')
+                    ? el('span', { class: 'fix-status done' }, el('span', { 'aria-hidden': 'true' }, reward.emoji.repeat(PB.entryPoints(entry)) + (feeling ? ' ' + feeling.face : '')), ' ', feeling ? feeling.text : 'Done',
+                      PB.entryPoints(entry) > 1 ? el('span', { class: 'visually-hidden' }, `, ${PB.entryPoints(entry)} ${reward.many}`) : null)
                     : el('span', { class: 'fix-status' }, 'not done yet'),
                   el('button', { type: 'button', class: 'danger', id: btnId('rm', familyId, entry.activityId),
                     'aria-label': `Remove ${activity.label}, ${family.name}`, onclick: () => remove(family, entry, activity) }, 'Remove'));
@@ -455,6 +461,141 @@
     });
   }
 
+  // ---------- reward counts ----------
+  /**
+   * A 1-5 chooser for how many rewards finishing earns. With `inherit`, the first choice is
+   * "Same as family" (value ''), so a button can follow its family's count.
+   */
+  function pointsSelect(id, label, value, onPick, inherit) {
+    const reward = PB.rewardOf(S());
+    const options = [];
+    if (inherit !== undefined) options.push(el('option', { value: '', selected: value === null }, `Same as family (${inherit} ${reward.emoji})`));
+    for (let n = 1; n <= PB.MAX_POINTS; n++) {
+      options.push(el('option', { value: String(n), selected: value === n }, `${n} ${reward.emoji.repeat(n)}`));
+    }
+    return el('label', { class: 'pts-field' }, el('span', { class: 'pts-label' }, 'Earns'),
+      el('select', { id, 'aria-label': label, onchange: (e) => {
+        const raw = e.target.value;
+        nextFocus = [id];
+        onPick(raw === '' ? null : Number(raw));
+      } }, options));
+  }
+
+  // ---------- families (add, rename, remove, reward count) ----------
+  function familyRow(family, rowIds) {
+    const reward = PB.rewardOf(S());
+    const renameBtn = 'gu-fam-edit-' + family.id;
+    if (editingFam === family.id) return familyEditRow(family, renameBtn);
+    const buttons = family.activities.filter((a) => !a.hidden).length;
+    const hide = () => {
+      const i = rowIds.indexOf(family.id);
+      nextFocus = [...[rowIds[i + 1], rowIds[i - 1]].filter(Boolean).map((id) => 'gu-fam-rm-' + id), 'gu-fam-add-name'];
+      announce(`Removed ${family.name}. It is listed under Removed families.`);
+      apply(PB.toggleFamilyHidden(S(), family.id));
+    };
+    const setPoints = (n) => {
+      announce(`Each ${family.name} activity now earns ${plural(n || 1, reward.one, reward.many)}`);
+      apply(PB.setRewardPoints(S(), family.id, n === 1 ? null : n));
+    };
+    return el('li', { class: 'btn-row fam-edit-row', 'data-family': family.id, style: famStyle(family) },
+      dot(family),
+      el('span', { class: 'btn-label' }, el('span', null, family.name),
+        family.custom ? tag('added') : null, family.renamed ? tag('renamed') : null, buttons ? null : tag('no buttons yet')),
+      pointsSelect('gu-fpts-' + family.id, `Each ${family.name} activity earns`, family.points, setPoints),
+      el('span', { class: 'btn-actions' },
+        el('button', { type: 'button', id: renameBtn, 'aria-label': `Rename ${family.name}`,
+          onclick: () => { editingFam = family.id; clearDrafts('gu-fam-name'); rerender(['gu-fam-name']); } }, 'Rename'),
+        family.renamed && !family.custom
+          ? el('button', { type: 'button', id: 'gu-fam-reset-' + family.id, 'aria-label': `Reset ${family.name} to its original name`,
+            onclick: () => { nextFocus = [renameBtn]; announce('Family name reset'); apply(PB.resetFamily(S(), family.id)); } }, 'Reset')
+          : null,
+        el('button', { type: 'button', class: 'danger', id: 'gu-fam-rm-' + family.id, 'aria-label': `Remove ${family.name}`, onclick: hide }, 'Remove')));
+  }
+
+  function familyEditRow(family, back) {
+    const close = () => { editingFam = null; clearDrafts('gu-fam-name'); };
+    const cancel = () => { close(); rerender([back]); };
+    return el('li', { class: 'btn-row editing', 'data-family': family.id },
+      el('form', {
+        class: 'edit-form', 'aria-label': `Rename ${family.name}`,
+        onkeydown: (e) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } },
+        onsubmit: (e) => {
+          e.preventDefault();
+          const name = e.currentTarget.querySelector('#gu-fam-name').value;
+          close();
+          nextFocus = [back];
+          announce(`Saved ${name.trim()}`);
+          apply(PB.renameFamily(S(), PB.FAMILIES, family.id, name));
+        },
+      },
+      el('label', { class: 'mini-field grow' }, el('span', null, 'Family name'),
+        draftInput('gu-fam-name', family.name, { maxlength: 24, required: true, pattern: '.*\\S.*', autocomplete: 'off' })),
+      el('span', { class: 'btn-actions' },
+        el('button', { type: 'submit', class: 'primary' }, 'Save'),
+        el('button', { type: 'button', onclick: cancel }, 'Cancel'))));
+  }
+
+  /** Round color swatches for a new family. Selection is shown without a re-render so typing is never lost. */
+  function colorPicker(group, chosen) {
+    return el('fieldset', { class: 'color-pick' },
+      el('legend', null, 'Color'),
+      PB.FAMILY_COLORS.map((c) => el('label', { class: 'color-tile' + (c.id === chosen ? ' selected' : ''), style: { '--fam': c.color, '--fam-light': c.light } },
+        el('input', { type: 'radio', class: 'visually-hidden', name: group, id: `${group}-${c.id}`, value: c.id, checked: c.id === chosen,
+          'aria-label': c.name,
+          onchange: (e) => {
+            drafts[group] = c.id;
+            for (const tile of e.target.closest('fieldset').querySelectorAll('.color-tile')) tile.classList.toggle('selected', tile.contains(e.target));
+          } }),
+        el('span', { class: 'color-dot', 'aria-hidden': 'true' }))));
+  }
+
+  function familiesCard(all, who) {
+    const shown = all.filter((f) => !f.hidden);
+    const removed = all.filter((f) => f.hidden);
+    const rowIds = shown.map((f) => f.id);
+    const used = new Set(all.map((f) => f.color));
+    const fresh = (PB.FAMILY_COLORS.find((c) => !used.has(c.color)) || PB.FAMILY_COLORS[0]).id;
+    const add = (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const name = form.querySelector('#gu-fam-add-name').value;
+      const color = (form.querySelector('input[name="gu-fam-add-color"]:checked') || {}).value;
+      const before = new Set(S().settings.customFamilies.map((f) => f.id));
+      const next = PB.addCustomFamily(S(), PB.FAMILIES, name, color);
+      const added = next.settings.customFamilies.find((f) => !before.has(f.id));
+      clearDrafts('gu-fam-add-name', 'gu-fam-add-color');
+      if (added) {
+        openDetails.add('btn-' + added.id); // straight on to adding its buttons
+        nextFocus = ['gu-add-label-' + added.id];
+        announce(`Added the ${added.name} family. Now add its buttons.`);
+      }
+      apply(next);
+    };
+    return card('Families',
+      hint(`Add, rename or remove whole families, and choose how many ${PB.rewardOf(S()).many} each one earns. Removing only hides a family from ${who}; its history stays.`),
+      shown.length ? el('ul', { class: 'btn-rows' }, shown.map((f) => familyRow(f, rowIds))) : hint('No families shown.'),
+      removed.length
+        ? el('div', { class: 'removed' },
+          el('h3', null, 'Removed families'),
+          hint(`Hidden from ${who}. Their history stays in Patterns.`),
+          el('ul', { class: 'btn-rows' }, removed.map((f) => el('li', { class: 'btn-row is-removed', 'data-family': f.id, style: famStyle(f) },
+            dot(f),
+            el('span', { class: 'btn-label' }, el('span', null, f.name), f.custom ? tag('added') : null),
+            el('span', { class: 'btn-actions' },
+              el('button', { type: 'button', id: 'gu-fam-back-' + f.id, 'aria-label': `Bring back ${f.name}`,
+                onclick: () => { nextFocus = ['gu-fam-rm-' + f.id]; announce(`${f.name} is back`); apply(PB.toggleFamilyHidden(S(), f.id)); } },
+              'Bring back'))))))
+        : null,
+      el('form', { class: 'add-form', onsubmit: add, 'aria-label': 'Add a family' },
+        el('h3', null, 'Add a family'),
+        el('div', { class: 'add-fields' },
+          el('label', { class: 'mini-field grow' }, el('span', null, 'Name'),
+            draftInput('gu-fam-add-name', '', { maxlength: 24, required: true, pattern: '.*\\S.*', placeholder: 'e.g. Kind Hands', autocomplete: 'off' })),
+          colorPicker('gu-fam-add-color', drafts['gu-fam-add-color'] || fresh),
+          el('button', { type: 'submit', class: 'primary', id: 'gu-fam-add' }, 'Add family')),
+        hint('Then add its buttons under Buttons below.')));
+  }
+
   function buttonRow(family, activity, rowIds) {
     const key = PB.activityKey(family.id, activity.id);
     if (editing === key) return editRow(family, activity);
@@ -470,10 +611,16 @@
       announce(`Removed ${activity.label}. It is listed under Removed buttons.`);
       apply(PB.toggleActivityHidden(S(), family.id, activity.id));
     };
+    const setPoints = (n) => {
+      const reward = PB.rewardOf(S());
+      announce(n === null ? `${activity.label} earns the same as its family` : `${activity.label} now earns ${plural(n, reward.one, reward.many)}`);
+      apply(PB.setRewardPoints(S(), key, n));
+    };
     return el('li', { class: 'btn-row', 'data-activity': activity.id },
       el('span', { class: 'btn-emoji', 'aria-hidden': 'true' }, activity.emoji),
       el('span', { class: 'btn-label' }, el('span', null, activity.label),
         activity.custom ? tag('added') : null, activity.renamed ? tag('edited') : null),
+      pointsSelect(btnId('pts', family.id, activity.id), `${activity.label} earns`, activity.ownPoints ? activity.points : null, setPoints, family.points),
       el('span', { class: 'btn-actions' },
         el('button', { type: 'button', id: btnId('edit', family.id, activity.id), 'aria-label': `Edit ${activity.label}`, onclick: startEdit }, 'Edit'),
         activity.renamed
@@ -674,15 +821,10 @@
                 onchange: () => { announce(`Reward is now ${r.many}`); apply(PB.setReward(S(), r.id)); } }),
               el('span', { class: 'reward-emoji', 'aria-hidden': 'true' }, r.emoji),
               el('span', { class: 'reward-name' }, capitalize(r.one))))),
-          hint(`What a finished activity earns. It changes everywhere, past ${current.many} too.`))),
-      card('Families shown',
-        hint(`Unticked families are hidden from ${who}. Their history stays.`),
-        el('div', { class: 'gu-fams' }, all.map((f) => el('label', { class: 'gu-check fam-check-row', style: famStyle(f) },
-          el('input', { type: 'checkbox', id: 'gu-fam-' + f.id, checked: !f.hidden,
-            onchange: () => apply(PB.toggleFamilyHidden(S(), f.id)) }),
-          dot(f), el('span', null, f.name))))),
+          hint(`What a finished activity earns. The symbol changes everywhere, past ${current.many} too. How many each activity earns is set under Families and Buttons; ${current.many} already earned never change.`))),
+      familiesCard(all, who),
       card('Buttons',
-        hint('Edit, remove or add the buttons in each family. Removing only hides a button; its history stays.'),
+        hint(`Edit, remove or add the buttons in each family, and give a button its own number of ${current.many} (for example more for eating veggies). Removing only hides a button; its history stays.`),
         el('div', { class: 'gu-btn-families' }, all.map((f) => familyButtons(f, who)))));
   }
 
@@ -895,6 +1037,7 @@
     unlocked = false;
     editing = null;
     editingKid = null;
+    editingFam = null;
     backupNote = null;
     signInError = null;
     clearAllDrafts();

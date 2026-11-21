@@ -68,7 +68,15 @@ Go through this on a real **iPad**, **phone** and **laptop** before a release. S
 
 - [ ] The child's name: type it and tap elsewhere. It appears on Today ("Hi Sam!") and in Ideas.
 - [ ] **Reward symbol:** choose ⭐ star. Today, the garden (now "My Rewards"), the tab and the celebration all use ⭐, including past rewards. Switch back to 🌸.
-- [ ] **Families shown:** untick a family. It disappears from Today but its history stays in Patterns.
+- [ ] **Families:**
+  - [ ] **Add a family** (for example "Kind Hands", pick a color). Its Buttons box opens, ready for its first button. Once it has a button, it shows on Today in its color.
+  - [ ] **Rename** a built-in family. Today shows the new name, and **Reset** brings back the original.
+  - [ ] **Remove** a family. It moves to "Removed families" and disappears from Today, but its history stays in Patterns. **Bring back** restores it.
+- [ ] **How many rewards:**
+  - [ ] Set Little Chef to earn **3**. The picker tiles and the picks on Today show 🌸🌸🌸. Finishing one shows "+3" in the celebration and adds 3 to the count.
+  - [ ] Give one button its own number (for example Run earns 2). Choosing **Same as family** goes back to the family's number.
+  - [ ] Lower a number after something was finished. What was already earned stays the same (Today, garden, Patterns).
+  - [ ] In the garden, a reward that counted more than once shows a "×3" badge.
 - [ ] **Button editor:**
   - [ ] **Edit** a built-in button's name and emoji. It shows "edited" and the new name on Today. **Reset** brings back the original.
   - [ ] **Remove** a button. It moves to "Removed buttons" and is hidden on Today. **Bring back** restores it.

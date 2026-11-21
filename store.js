@@ -9,6 +9,9 @@
   const EPOCH = '1970-01-01T00:00:00.000Z';
   const MAX_NAME = 30;
   const MAX_LABEL = 24;
+  const MAX_FAMILY_NAME = 24;
+  const MAX_POINTS = 5; // the most rewards one finished activity can earn
+  const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
   /** What a finished activity earns. Grown-ups choose one; it changes everywhere, past rewards included. */
   const REWARDS = [
@@ -17,6 +20,18 @@
     { id: 'sun', emoji: '☀️', one: 'sun', many: 'suns' },
     { id: 'candy', emoji: '🍬', one: 'candy', many: 'candies' },
     { id: 'balloon', emoji: '🎈', one: 'balloon', many: 'balloons' },
+  ];
+
+  /** Colors a grown-up can give a family they add (dark enough for text on the light tint). */
+  const FAMILY_COLORS = [
+    { id: 'green', name: 'Green', color: '#2a7a46', light: '#e0f4e4' },
+    { id: 'blue', name: 'Blue', color: '#1f6aa5', light: '#e1effa' },
+    { id: 'orange', name: 'Orange', color: '#b4541a', light: '#fdebdc' },
+    { id: 'purple', name: 'Purple', color: '#8a3d9c', light: '#f3e3f7' },
+    { id: 'red', name: 'Red', color: '#a3342a', light: '#fce4e0' },
+    { id: 'gold', name: 'Gold', color: '#7a6a00', light: '#fbf3c8' },
+    { id: 'teal', name: 'Teal', color: '#1f7a7a', light: '#dcf4f2' },
+    { id: 'pink', name: 'Pink', color: '#b0306a', light: '#fbe3ee' },
   ];
 
   // ---------- dates (local calendar days as "YYYY-MM-DD") ----------
@@ -28,7 +43,8 @@
 
   // ---------- shape ----------
   function defaultSettings() {
-    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], activityOverrides: {}, reward: 'flower', avatar: '🙂', updatedAt: EPOCH };
+    return { childName: '', readAloud: true, hiddenFamilies: [], hiddenActivities: [], customActivities: [], activityOverrides: {},
+      customFamilies: [], familyOverrides: {}, rewardPoints: {}, reward: 'flower', avatar: '🙂', updatedAt: EPOCH };
   }
   function emptyState() { return { version: VERSION, settings: defaultSettings(), entries: [] }; }
 
@@ -40,8 +56,16 @@
     return isObject(e) && isString(e.date) && DATE_RE.test(e.date) && isString(e.familyId)
       && isString(e.activityId) && isString(e.pickedAt)
       && (e.doneAt === null || isString(e.doneAt)) && (e.feeling === null || FEELINGS.includes(e.feeling))
-      && typeof e.removed === 'boolean' && isString(e.updatedAt);
+      && typeof e.removed === 'boolean' && isString(e.updatedAt)
+      && (e.points === undefined || isPoints(e.points));
   }
+  /** A reward count: a whole number from 1 to MAX_POINTS. */
+  function isPoints(n) { return Number.isInteger(n) && n >= 1 && n <= MAX_POINTS; }
+  function isValidCustomFamily(f) {
+    return isObject(f) && isString(f.id) && isString(f.name) && isString(f.color) && HEX_RE.test(f.color)
+      && isString(f.light) && HEX_RE.test(f.light);
+  }
+  const isPlainObject = (o) => isObject(o) && !Array.isArray(o);
   function isValidCustom(a) {
     return isObject(a) && isString(a.familyId) && isString(a.id) && isString(a.label) && isString(a.emoji);
   }
@@ -53,7 +77,11 @@
     return isObject(s) && isString(s.childName) && typeof s.readAloud === 'boolean'
       && isStringArray(s.hiddenFamilies) && isStringArray(s.hiddenActivities)
       && Array.isArray(s.customActivities) && s.customActivities.every(isValidCustom)
-      && isValidOverrides(s.activityOverrides) && REWARDS.some((r) => r.id === s.reward) && isString(s.avatar) && isString(s.updatedAt);
+      && isValidOverrides(s.activityOverrides)
+      && Array.isArray(s.customFamilies) && s.customFamilies.every(isValidCustomFamily)
+      && isPlainObject(s.familyOverrides) && Object.values(s.familyOverrides).every((v) => isObject(v) && isString(v.name))
+      && isPlainObject(s.rewardPoints) && Object.values(s.rewardPoints).every(isPoints)
+      && REWARDS.some((r) => r.id === s.reward) && isString(s.avatar) && isString(s.updatedAt);
   }
   function isValidState(s) {
     return isObject(s) && s.version === VERSION && isValidSettings(s.settings)
@@ -144,7 +172,8 @@
     const existing = findEntry(state, date, familyId, activityId);
     if (!existing || existing.removed || existing.doneAt) return state;
     const iso = now.toISOString();
-    return putEntry(state, { ...existing, doneAt: iso, feeling, updatedAt: iso });
+    // The count is kept on the entry, so a grown-up changing it later never takes back what was earned.
+    return putEntry(state, { ...existing, doneAt: iso, feeling, points: pointsFor(state, familyId, activityId), updatedAt: iso });
   }
 
   /** Grown-up correction: take a pick away even if it was marked done. doneAt is kept so sync sees a newer edit, not a stale pick. */
@@ -155,6 +184,30 @@
   }
 
   function activeEntries(state) { return state.entries.filter((e) => !e.removed); }
+
+  // ---------- reward counts ----------
+  /** How many rewards a finished entry earned (entries from before counts existed earned 1). */
+  function entryPoints(e) { return isPoints(e.points) ? e.points : 1; }
+  /** Rewards earned by these entries: finished, not removed. */
+  function rewardTotal(entries) {
+    return entries.reduce((sum, e) => sum + (e.doneAt && !e.removed ? entryPoints(e) : 0), 0);
+  }
+  /** What finishing this activity earns now: its own count, else its family's, else 1. */
+  function pointsFor(state, familyId, activityId) {
+    const p = state.settings.rewardPoints;
+    return p[activityKey(familyId, activityId)] || p[familyId] || 1;
+  }
+  /**
+   * Grown-up: set the count for a family ("move") or one button ("move/run"). null clears it,
+   * so a button follows its family again, and a family goes back to 1.
+   */
+  function setRewardPoints(state, key, points, now) {
+    const next = { ...state.settings.rewardPoints };
+    if (points === null || points === undefined) delete next[key];
+    else if (isPoints(points)) next[key] = points;
+    else return state;
+    return updateSettings(state, { rewardPoints: next }, now);
+  }
 
   /** familyId -> that day's picks in that family, oldest pick first. */
   function entriesForDate(state, date) {
@@ -197,9 +250,40 @@
     return updateSettings(state, { hiddenActivities: toggleIn(state.settings.hiddenActivities, key) }, now);
   }
 
+  /** The built-in families plus the ones a grown-up added (those start with no buttons). */
+  function allBaseFamilies(baseFamilies, state) {
+    return [...baseFamilies, ...state.settings.customFamilies.map((f) => ({ ...f, activities: [] }))];
+  }
+
+  /** Grown-up: add a new family. Its id is never reused, so sync and history stay tied to it. */
+  function addCustomFamily(state, baseFamilies, name, colorId, now) {
+    const clean = String(name).trim().slice(0, MAX_FAMILY_NAME);
+    if (!clean) return state;
+    const palette = FAMILY_COLORS.find((c) => c.id === colorId)
+      || FAMILY_COLORS[state.settings.customFamilies.length % FAMILY_COLORS.length];
+    const taken = new Set(allBaseFamilies(baseFamilies, state).map((f) => f.id));
+    const base = 'custom-' + slugify(clean);
+    let id = base;
+    for (let n = 2; taken.has(id); n++) id = base + '-' + n;
+    const family = { id, name: clean, color: palette.color, light: palette.light };
+    return updateSettings(state, { customFamilies: [...state.settings.customFamilies, family] }, now);
+  }
+
+  /** Grown-up: rename any family, built-in or added. resetFamily undoes it. */
+  function renameFamily(state, baseFamilies, familyId, name, now) {
+    const clean = String(name).trim().slice(0, MAX_FAMILY_NAME);
+    if (!clean || !allBaseFamilies(baseFamilies, state).some((f) => f.id === familyId)) return state;
+    return updateSettings(state, { familyOverrides: { ...state.settings.familyOverrides, [familyId]: { name: clean } } }, now);
+  }
+  function resetFamily(state, familyId, now) {
+    const overrides = { ...state.settings.familyOverrides };
+    delete overrides[familyId];
+    return updateSettings(state, { familyOverrides: overrides }, now);
+  }
+
   function addCustomActivity(state, baseFamilies, familyId, label, emoji, now) {
     const clean = String(label).trim().slice(0, MAX_LABEL);
-    const family = baseFamilies.find((f) => f.id === familyId);
+    const family = allBaseFamilies(baseFamilies, state).find((f) => f.id === familyId);
     if (!clean || !family) return state;
     const taken = new Set([
       ...family.activities.map((x) => x.id),
@@ -213,7 +297,7 @@
   }
 
   function allButtonIds(baseFamilies, state, familyId) {
-    const family = baseFamilies.find((f) => f.id === familyId);
+    const family = allBaseFamilies(baseFamilies, state).find((f) => f.id === familyId);
     if (!family) return [];
     return [...family.activities.map((x) => x.id),
       ...state.settings.customActivities.filter((x) => x.familyId === familyId).map((x) => x.id)];
@@ -235,18 +319,26 @@
     return updateSettings(state, { activityOverrides: overrides }, now);
   }
 
-  /** All families with custom buttons and renames applied, each family/activity flagged `hidden`. */
+  /**
+   * All families (built-in, then added ones) with custom buttons and renames applied. Each family and
+   * activity is flagged `hidden`; families also carry `custom`, `renamed` and `points`, activities carry
+   * `points` (what finishing earns) and `ownPoints` (true when the button has its own count).
+   */
   function familiesWithSettings(baseFamilies, state) {
     const s = state.settings;
-    return baseFamilies.map((f) => {
+    return allBaseFamilies(baseFamilies, state).map((f) => {
+      const isCustom = !baseFamilies.some((b) => b.id === f.id);
       const customs = s.customActivities.filter((x) => x.familyId === f.id)
         .map((x) => ({ id: x.id, label: x.label, emoji: x.emoji, custom: true }));
       const activities = [...f.activities, ...customs].map((x) => {
         const key = activityKey(f.id, x.id);
         const override = s.activityOverrides[key];
-        return { custom: false, ...x, ...(override || {}), renamed: !!override, hidden: s.hiddenActivities.includes(key) };
+        return { custom: false, ...x, ...(override || {}), renamed: !!override, hidden: s.hiddenActivities.includes(key),
+          points: pointsFor(state, f.id, x.id), ownPoints: isPoints(s.rewardPoints[key]) };
       });
-      return { ...f, hidden: s.hiddenFamilies.includes(f.id), activities };
+      const rename = s.familyOverrides[f.id];
+      return { ...f, ...(rename ? { name: rename.name } : {}), custom: isCustom, renamed: !!rename,
+        points: s.rewardPoints[f.id] || 1, hidden: s.hiddenFamilies.includes(f.id), activities };
     });
   }
 
@@ -302,22 +394,26 @@
     const entries = [...byKey.values()].sort((a, b) => entryKey(a).localeCompare(entryKey(b)));
     const [winner, other] = remote.settings.updatedAt > local.settings.updatedAt
       ? [remote.settings, local.settings] : [local.settings, remote.settings];
-    // Newer settings win, but buttons a grown-up added (or renamed) on either device are never dropped:
-    // picks may point at them. Custom ids are never reused, so this can't revive anything on purpose removed.
+    // Newer settings win, but buttons and families a grown-up added (or renamed) on either device are never
+    // dropped: picks may point at them. Custom ids are never reused, so this can't revive anything on purpose removed.
     const customKey = (x) => x.familyId + '/' + x.id;
     const known = new Set(winner.customActivities.map(customKey));
+    const knownFamilies = new Set(winner.customFamilies.map((f) => f.id));
     const settings = {
       ...winner,
       customActivities: [...winner.customActivities, ...other.customActivities.filter((x) => !known.has(customKey(x)))],
       activityOverrides: { ...other.activityOverrides, ...winner.activityOverrides },
+      customFamilies: [...winner.customFamilies, ...other.customFamilies.filter((f) => !knownFamilies.has(f.id))],
+      familyOverrides: { ...other.familyOverrides, ...winner.familyOverrides },
     };
     return { version: VERSION, settings, entries };
   }
 
   const api = {
-    STORAGE_KEY, FEELINGS, REWARDS, dateKey, addDays, daysBetween, emptyState, isValidState, upgradeState, loadState, saveState,
+    STORAGE_KEY, FEELINGS, REWARDS, FAMILY_COLORS, MAX_POINTS, dateKey, addDays, daysBetween, emptyState, isValidState, upgradeState, loadState, saveState,
     pickActivity, unpickActivity, markDone, removePick, activeEntries, entriesForDate, activityKey,
     setChildName, setReadAloud, setReward, rewardOf, setAvatar, toggleFamilyHidden, toggleActivityHidden, addCustomActivity, renameActivity, resetActivity,
+    addCustomFamily, renameFamily, resetFamily, entryPoints, rewardTotal, pointsFor, setRewardPoints,
     familiesWithSettings, visibleFamilies, findActivity, exportBackup, importBackup, mergeStates,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;

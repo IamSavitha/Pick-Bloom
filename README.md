@@ -28,7 +28,7 @@ The grown-up corner is behind a lock that a toddler won't open by accident: **pr
 | 📊 **Patterns** | Rewards and picks over the last 7 or 30 days, family by family, favorites, time of day, the most-loved activities, and buttons never tried. |
 | 💡 **Ideas** | A few suggestions based on simple rules (see "How the Ideas work" below). |
 | 🧹 **Fix picks** | Remove picks that were made by mistake, even finished ones, for the last 7 days. |
-| ⚙️ **Settings** | Add or edit children, the child's name, sounds and voice, the **reward symbol** (🌸 flower, ⭐ star, ☀️ sun, 🍬 candy or 🎈 balloon), which families are shown, and the **button editor** (rename, change the emoji, remove, bring back or add your own buttons). |
+| ⚙️ **Settings** | Add or edit children, the child's name, sounds and voice, the **reward symbol** (🌸 flower, ⭐ star, ☀️ sun, 🍬 candy or 🎈 balloon), the **families** (add your own family, rename, remove or bring back), **how many rewards** each family or button earns (1 to 5, for example 3 ⭐ for eating veggies and 1 ⭐ for play), and the **button editor** (rename, change the emoji, remove, bring back or add your own buttons). Rewards already earned never change when you change a number later. |
 | 💾 **Backup** | Download everything to a file, or add a backup file's contents to this device. |
 | 🔄 **Sync** | Sign in to keep the same garden on all your devices (optional). |
 

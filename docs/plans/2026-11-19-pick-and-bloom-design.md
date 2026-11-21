@@ -85,7 +85,8 @@ The user is a toddler boy who can't read yet, so pictures, sounds and celebratio
   - Child's name.
   - Sounds & voice on or off (read-aloud plus the chime).
   - **Reward symbol** (amended 2026-11-19): 🌸 Flower (default), ⭐ Star, ☀️ Sun, 🍬 Candy or 🎈 Balloon. It changes everywhere: the celebration burst, progress text ("⭐ 3 stars today"), the garden scene (symbols instead of drawn flowers), and past rewards too. The tab reads "My Garden" for flowers and "My Rewards" otherwise.
-  - Show or hide families.
+  - **Families** (amended 2026-11-21): **add** a family of your own (name and color), **rename** any family (with **Reset** for built-in ones), **remove** a family (hidden from the child, history kept) and **Bring back**.
+  - **How many rewards** (amended 2026-11-21): each family earns 1 to 5 rewards per finished activity (default 1), and any button can have its own number instead ("Same as family" undoes it). The number is saved on the pick when it's finished, so changing it later never takes back what was earned. Today, the picker, the celebration ("+3"), the garden ("×3"), Patterns and Fix picks all count rewards this way.
   - Buttons, grown-up only (amended 2026-11-19):
     - **Add** a new button.
     - **Edit** any button's name or emoji, built-in ones included, with **Reset** to undo.
@@ -100,9 +101,11 @@ The user is a toddler boy who can't read yet, so pictures, sounds and celebratio
 state = {
   version: 2,
   settings: { childName, readAloud, hiddenFamilies[], hiddenActivities["fam/act"],
-              customActivities[{familyId,id,label,emoji}], updatedAt },
+              customActivities[{familyId,id,label,emoji}], activityOverrides,
+              customFamilies[{id,name,color,light}], familyOverrides{id:{name}},
+              rewardPoints{"fam" | "fam/act": 1..5}, reward, avatar, updatedAt },
   entries: [{ date:"YYYY-MM-DD", familyId, activityId, pickedAt, doneAt|null,
-              feeling:"loved"|"okay"|"tired"|null, removed, updatedAt }]
+              feeling:"loved"|"okay"|"tired"|null, points?:1..5, removed, updatedAt }]
 }
 ```
 

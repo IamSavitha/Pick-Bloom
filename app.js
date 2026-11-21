@@ -34,7 +34,7 @@
     return node;
   }
 
-  /** A flower drawing. Only the two hex colors from activities.js go into it. */
+  /** A flower drawing. Only two hex colors go into it (from activities.js, or a grown-up-added family, checked by store.js). */
   function flowerSvg(color, light) {
     const svg = svgEl('svg', { viewBox: '0 0 60 80', 'aria-hidden': 'true', focusable: 'false' });
     svg.append(svgEl('path', { d: 'M30 40 V78', stroke: '#4f7d2c', 'stroke-width': 4, 'stroke-linecap': 'round', fill: 'none' }));
@@ -266,11 +266,15 @@
   const reward = () => PB.rewardOf(state);
   const isFlower = () => reward().id === 'flower';
   const countOf = (n) => `${n} ${n === 1 ? reward().one : reward().many}`;
+  /** The reward symbol once per reward earned (a grown-up sets 1 to 5 per activity). */
+  const symbols = (n) => reward().emoji.repeat(n);
+  /** "⭐⭐⭐" under an activity worth more than one reward, so the child can see it. */
+  const worthBadge = (cls, n) => (n > 1 ? el('span', { class: cls, role: 'img', 'aria-label': `earns ${countOf(n)}` }, symbols(n)) : null);
   const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
   /** The burst: the flower mix for flowers, otherwise mostly the chosen reward with a little sparkle. */
   const burstEmoji = (i) => (isFlower() ? PETALS[i % PETALS.length] : i % 5 === 4 ? '✨' : reward().emoji);
 
-  function celebrate() {
+  function celebrate(points) {
     const old = document.querySelector('.celebrate');
     if (old) old.remove();
     const petals = [];
@@ -285,7 +289,8 @@
       }
     }
     const overlay = el('div', { class: 'celebrate', 'aria-hidden': 'true' }, petals,
-      el('div', { class: 'cheer' }, sproutSvg('cheer'), el('span', { class: 'yay' }, 'Yay! 🎉')));
+      el('div', { class: 'cheer' }, sproutSvg('cheer'), el('span', { class: 'yay' }, 'Yay! 🎉'),
+        points > 1 ? el('span', { class: 'yay-count' }, `+${points} `, symbols(points)) : null));
     document.body.append(overlay);
     setTimeout(() => overlay.remove(), 1400);
   }
@@ -398,7 +403,8 @@
       el('span', { class: 'tile-check', 'aria-hidden': 'true' }),
       tried.has(PB.activityKey(family.id, a.id)) ? null : el('span', { class: 'badge-new', role: 'img', 'aria-label': 'new', title: 'Never tried yet' }, '✨'),
       el('span', { class: 'emoji', 'aria-hidden': 'true' }, a.emoji),
-      el('span', { class: 'label' }, a.label));
+      el('span', { class: 'label' }, a.label),
+      worthBadge('tile-worth', a.points));
       paintTile(tile, findPick(date, family.id, a.id));
       return tile;
     });
@@ -420,10 +426,12 @@
           closeDialog(feelingDialog);
           const row = app.querySelector(pickSelector(family.id, activity.id));
           if (state !== before) {
+            const done = findPick(date, family.id, activity.id);
+            const points = done ? PB.entryPoints(done) : 1;
             chime();
-            speak('Yay! ' + FEELING_TEXT[feeling].text);
-            announce.textContent = `${capitalize(reward().one)} earned: ${activity.label}, ${family.name}`;
-            celebrate();
+            speak('Yay! ' + FEELING_TEXT[feeling].text + (points > 1 ? `. ${countOf(points)}!` : ''));
+            announce.textContent = `${capitalize(countOf(points))} earned: ${activity.label}, ${family.name}`;
+            celebrate(points);
             if (row) row.classList.add('bloom');
           }
           focusIn(pickSelector(family.id, activity.id));
@@ -437,11 +445,13 @@
   function pickRow(family, entry, families) {
     const activity = PB.findActivity(families, family.id, entry.activityId);
     const feeling = FEELING_TEXT[entry.feeling];
+    const earned = PB.entryPoints(entry);
     return el('li', { class: 'pick' + (entry.doneAt ? ' done' : ''), 'data-activity': entry.activityId, tabindex: entry.doneAt ? '-1' : null },
       el('span', { class: 'pick-emoji', 'aria-hidden': 'true' }, activity.emoji),
       el('span', { class: 'label' }, activity.label),
+      entry.doneAt ? null : worthBadge('pick-worth', PB.pointsFor(state, family.id, entry.activityId)),
       entry.doneAt
-        ? el('span', { class: 'pick-done', role: 'img', 'aria-label': feeling ? feeling.text : 'Done' }, reward().emoji, feeling ? feeling.face : '')
+        ? el('span', { class: 'pick-done', role: 'img', 'aria-label': `${feeling ? feeling.text : 'Done'}, ${countOf(earned)}` }, symbols(earned), feeling ? feeling.face : '')
         : el('button', { type: 'button', class: 'did-it', 'aria-label': `I did it: ${activity.label}`, onclick: () => openFeeling(family, activity) }, 'I did it!'));
   }
 
@@ -471,7 +481,7 @@
     const families = visible().filter((f) => f.activities.length > 0);
     const all = allFams();
     const shown = families.flatMap((f) => picks[f.id] || []);
-    const flowers = shown.filter((e) => e.doneAt).length;
+    const flowers = PB.rewardTotal(shown);
     const withPick = families.filter((f) => (picks[f.id] || []).length > 0).length;
     return el('section', { class: 'view today' },
       el('div', { class: 'hello' },
@@ -495,11 +505,14 @@
     const family = families.find((f) => f.id === entry.familyId) || FALLBACK_COLORS;
     const activity = PB.findActivity(families, entry.familyId, entry.activityId);
     const r = reward();
+    const n = PB.entryPoints(entry);
     const symbol = r.id === 'flower'
       ? flowerSvg(family.color, family.light)
       : el('span', { class: small ? 'mini-reward' : 'sticker', style: famStyle(family), 'aria-hidden': 'true' }, r.emoji);
-    if (small) return el('span', { class: 'mini-flower', role: 'img', 'aria-label': activity.label, title: activity.label }, symbol);
-    return el('figure', { class: 'flower', style: { '--i': String(index || 0) } }, symbol,
+    const times = n > 1 ? el('span', { class: 'reward-times', 'aria-hidden': 'true' }, '×' + n) : null;
+    const label = n > 1 ? `${activity.label}, ${countOf(n)}` : activity.label;
+    if (small) return el('span', { class: 'mini-flower', role: 'img', 'aria-label': label, title: label }, symbol, times);
+    return el('figure', { class: 'flower', style: { '--i': String(index || 0) }, 'aria-label': n > 1 ? label : null }, symbol, times,
       el('figcaption', null, el('span', { class: 'emoji', 'aria-hidden': 'true' }, activity.emoji), el('span', { class: 'flower-label' }, activity.label)));
   }
 
@@ -514,7 +527,7 @@
     const now = today();
     const families = allFams();
     const todays = doneOn(now);
-    const total = PB.activeEntries(state).filter((e) => e.doneAt).length;
+    const total = PB.rewardTotal(state.entries);
     const week = [];
     for (let i = 1; i <= 7; i++) {
       const date = PB.addDays(now, -i);
